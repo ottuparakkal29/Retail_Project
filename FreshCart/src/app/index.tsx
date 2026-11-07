@@ -1,15 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppText as Text } from '@/components/app-text';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 
 const GREEN = '#138a39';
@@ -43,12 +45,60 @@ const products = [
   { name: 'Organic Avocados', category: 'Organic', detail: '2 pcs', price: 85, oldPrice: 110, rating: '4.7', reviews: '460', discount: 23, image: require('../../assets/images/store/avocado.jpg') },
 ];
 
+const heroSlides = [
+  {
+    eyebrow: 'GOOD FOOD, GOOD MOOD',
+    headline: 'Fresh & healthy',
+    highlight: 'groceries for you!',
+    subtitle: 'Shop fresh. Live healthy.',
+    category: 'Fruits',
+    image: require('../../assets/images/store/slider 1.jpg'),
+    imageLabel: 'Fresh apples ready to enjoy',
+  },
+  {
+    eyebrow: 'A LITTLE GREEN GOES A LONG WAY',
+    headline: 'Greens that make',
+    highlight: 'every meal better.',
+    subtitle: 'Hand-picked goodness, delivered fresh.',
+    category: 'Vegetables',
+    image: require('../../assets/images/store/slider 2.jpg'),
+    imageLabel: 'Fresh leafy greens at the market',
+  },
+  {
+    eyebrow: 'FRESH FROM THE FARM',
+    headline: 'Pick the best',
+    highlight: 'from every season.',
+    subtitle: 'Discover nature’s freshest picks.',
+    category: 'Organic',
+    image: require('../../assets/images/store/slider 3.avif'),
+    imageLabel: 'Seasonal fresh produce',
+  },
+];
+
 export default function HomeScreen() {
   const isWide = useResponsiveBreakpoint(760);
   const isTablet = useResponsiveBreakpoint(600);
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [cartCount, setCartCount] = useState(0);
+  const [signupVisible, setSignupVisible] = useState(false);
+  const [signupName, setSignupName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPhone, setSignupPhone] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupMessage, setSignupMessage] = useState('');
+  const [loginVisible, setLoginVisible] = useState(false);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveSlide((current) => (current + 1) % heroSlides.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -61,6 +111,18 @@ export default function HomeScreen() {
       return matchesCategory && matchesSearch;
     });
   }, [query, selectedCategory]);
+
+  function signIn() {
+    if (loginUsername.trim() === 'admin' && loginPassword === 'admin') {
+      setLoginVisible(false);
+      setLoginError('');
+      setLoginPassword('');
+      router.push('/admin');
+      return;
+    }
+
+    setLoginError('That username and password do not match. Please try again.');
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -93,7 +155,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            <View style={styles.headerActions}>
+            <View style={[styles.headerActions, !isWide && styles.headerActionsCompact]}>
               {isWide && (
                 <Pressable style={styles.location}>
                   <Text style={styles.locationIcon}>⌖</Text>
@@ -101,6 +163,19 @@ export default function HomeScreen() {
                   <Text style={styles.chevron}>⌄</Text>
                 </Pressable>
               )}
+              <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Create a shopper account"
+                  onPress={() => setSignupVisible(true)}
+                  style={({ pressed }) => [
+                    styles.signupButton,
+                    pressed && styles.authPressed,
+                  ]}>
+                  <View style={styles.personHead} />
+                  <View style={styles.personShoulders} />
+                </Pressable>
+              </View>
               <Pressable accessibilityLabel={`Cart, ${cartCount} items`} style={styles.cartButton}>
                 <Text style={styles.cartIcon}>🛒</Text>
                 <View style={styles.cartBadge}>
@@ -138,6 +213,12 @@ export default function HomeScreen() {
                 <Text style={styles.navLink}>Categories</Text>
                 <Text style={styles.navLink}>Offers</Text>
                 <Text style={styles.navLink}>My orders</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.push('/admin')}
+                  style={styles.dashboardNavButton}>
+                  <Text style={styles.dashboardNavText}>Dashboard</Text>
+                </Pressable>
               </View>
               <View style={styles.deliveryNote}>
                 <Text style={styles.deliveryIcon}>🚚</Text>
@@ -149,33 +230,41 @@ export default function HomeScreen() {
           <View style={[styles.hero, !isWide && styles.heroCompact]}>
             <View style={styles.heroCopy}>
               <Text style={[styles.eyebrow, !isWide && styles.eyebrowCompact]}>
-                GOOD FOOD, GOOD MOOD
+                {heroSlides[activeSlide].eyebrow}
               </Text>
               <Text style={[styles.heroTitle, !isWide && styles.heroTitleCompact]}>
-                Fresh & healthy{'\n'}
-                <Text style={styles.heroTitleGreen}>groceries for you!</Text>
+                {heroSlides[activeSlide].headline}{'\n'}
+                <Text style={styles.heroTitleGreen}>{heroSlides[activeSlide].highlight}</Text>
               </Text>
-              <Text style={styles.heroSubtitle}>Shop fresh. Live healthy.</Text>
+              <Text style={styles.heroSubtitle}>{heroSlides[activeSlide].subtitle}</Text>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setSelectedCategory('Fruits')}
+                onPress={() => setSelectedCategory(heroSlides[activeSlide].category)}
                 style={styles.heroButton}>
                 <Text style={styles.heroButtonText}>Shop fresh <Text style={styles.buttonArrow}>→</Text></Text>
               </Pressable>
             </View>
             <View style={styles.heroArt}>
               <Image
-                accessibilityLabel="Fresh vegetables at the market"
-                source={require('../../assets/images/store/hero-produce.jpg')}
+                accessibilityLabel={heroSlides[activeSlide].imageLabel}
+                source={heroSlides[activeSlide].image}
                 style={styles.heroPhoto}
                 contentFit="cover"
-                transition={180}
+                transition={300}
               />
             </View>
             <View style={styles.heroDots}>
-              <View style={styles.dotActive} />
-              <View style={styles.dot} />
-              <View style={styles.dot} />
+              {heroSlides.map((slide, index) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show slide ${index + 1}: ${slide.eyebrow}`}
+                  accessibilityState={{ selected: activeSlide === index }}
+                  key={slide.eyebrow}
+                  onPress={() => setActiveSlide(index)}
+                  style={styles.dotButton}>
+                  <View style={[styles.dot, activeSlide === index && styles.dotActive]} />
+                </Pressable>
+              ))}
             </View>
           </View>
 
@@ -317,6 +406,204 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => {
+          setSignupVisible(false);
+          setSignupMessage('');
+        }}
+        transparent
+        visible={signupVisible}>
+        <View style={styles.signupBackdrop}>
+          <View style={styles.signupCard}>
+            <View style={styles.signupHeading}>
+              <View style={styles.signupIcon}>
+                <Text style={styles.signupIconText}>✳</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close signup"
+                onPress={() => {
+                  setSignupVisible(false);
+                  setSignupMessage('');
+                }}
+                style={styles.signupClose}>
+                <Text style={styles.signupCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.signupTitle}>Join the FreshCart family</Text>
+            <Text style={styles.signupSubtitle}>Create your shopper account.</Text>
+
+            <View style={styles.signupField}>
+              <Text style={styles.signupLabel}>Your name</Text>
+              <TextInput
+                accessibilityLabel="Your name"
+                onChangeText={setSignupName}
+                placeholder="Enter your name"
+                placeholderTextColor="#8b958d"
+                style={styles.signupInput}
+                value={signupName}
+              />
+            </View>
+            <View style={styles.signupField}>
+              <Text style={styles.signupLabel}>Email address</Text>
+              <TextInput
+                accessibilityLabel="Email address"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                onChangeText={setSignupEmail}
+                placeholder="you@example.com"
+                placeholderTextColor="#8b958d"
+                style={styles.signupInput}
+                value={signupEmail}
+              />
+            </View>
+            <View style={styles.signupField}>
+              <Text style={styles.signupLabel}>Phone number</Text>
+              <TextInput
+                accessibilityLabel="Phone number"
+                autoComplete="tel"
+                keyboardType="phone-pad"
+                onChangeText={setSignupPhone}
+                placeholder="Enter your phone number"
+                placeholderTextColor="#8b958d"
+                style={styles.signupInput}
+                value={signupPhone}
+              />
+            </View>
+            <View style={styles.signupField}>
+              <Text style={styles.signupLabel}>Password</Text>
+              <TextInput
+                accessibilityLabel="Create password"
+                onChangeText={setSignupPassword}
+                placeholder="At least 8 characters"
+                placeholderTextColor="#8b958d"
+                secureTextEntry
+                style={styles.signupInput}
+                value={signupPassword}
+              />
+            </View>
+            {signupMessage ? (
+              <Text accessibilityLiveRegion="polite" style={styles.signupMessage}>
+                {signupMessage}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                const phoneDigits = signupPhone.replace(/\D/g, '');
+                if (
+                  !signupName.trim() ||
+                  !signupEmail.includes('@') ||
+                  phoneDigits.length < 7 ||
+                  phoneDigits.length > 15 ||
+                  signupPassword.length < 8
+                ) {
+                  setSignupMessage(
+                    'Enter your name, a valid email and phone number, and a password of at least 8 characters.',
+                  );
+                  return;
+                }
+                setSignupMessage(
+                  'Shopper signup is not connected yet. Your details have not been saved.',
+                );
+              }}
+              style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
+              <Text style={styles.createAccountText}>Create account</Text>
+              <Text style={styles.createAccountArrow}>→</Text>
+            </Pressable>
+            <Text style={styles.signupDisclaimer}>
+              Demo form only. Account creation requires a connected authentication service.
+            </Text>
+            <View style={styles.accountPrompt}>
+              <Text style={styles.accountPromptText}>Already have an account?</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setSignupVisible(false);
+                  setSignupMessage('');
+                  setLoginError('');
+                  setLoginVisible(true);
+                }}>
+                <Text style={styles.accountPromptLink}>Log in</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => {
+          setLoginVisible(false);
+          setLoginError('');
+        }}
+        transparent
+        visible={loginVisible}>
+        <View style={styles.signupBackdrop}>
+          <View style={styles.signupCard}>
+            <View style={styles.signupHeading}>
+              <View style={styles.signupIcon}>
+                <Text style={styles.signupIconText}>↗</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close sign in"
+                onPress={() => {
+                  setLoginVisible(false);
+                  setLoginError('');
+                }}
+                style={styles.signupClose}>
+                <Text style={styles.signupCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.signupTitle}>Welcome back</Text>
+            <Text style={styles.signupSubtitle}>Sign in to your FreshCart account.</Text>
+            <View style={styles.signupField}>
+              <Text style={styles.signupLabel}>Username</Text>
+              <TextInput
+                accessibilityLabel="Username"
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setLoginUsername}
+                onSubmitEditing={signIn}
+                placeholder="Enter your username"
+                placeholderTextColor="#8b958d"
+                returnKeyType="next"
+                style={styles.signupInput}
+                value={loginUsername}
+              />
+            </View>
+            <View style={styles.signupField}>
+              <Text style={styles.signupLabel}>Password</Text>
+              <TextInput
+                accessibilityLabel="Password"
+                onChangeText={setLoginPassword}
+                onSubmitEditing={signIn}
+                placeholder="Enter your password"
+                placeholderTextColor="#8b958d"
+                returnKeyType="done"
+                secureTextEntry
+                style={styles.signupInput}
+                value={loginPassword}
+              />
+            </View>
+            {loginError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.signupMessage}>
+                {loginError}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={signIn}
+              style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
+              <Text style={styles.createAccountText}>Sign in</Text>
+              <Text style={styles.createAccountArrow}>→</Text>
+            </Pressable>
+            <Text style={styles.signupDisclaimer}>
+              Demo admin access: admin / admin
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -386,6 +673,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
+    fontFamily: 'Poppins_400Regular',
     color: '#253129',
     fontSize: 14,
   },
@@ -406,6 +694,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 18,
+  },
+  headerActionsCompact: {
+    gap: 7,
+  },
+  authActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  authActionsCompact: {
+    gap: 6,
+  },
+  signupButton: {
+    width: 34,
+    height: 34,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    position: 'relative',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#cfe2d1',
+    backgroundColor: '#f0f8ee',
+  },
+  personHead: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    top: 7,
+    borderRadius: 5,
+    backgroundColor: '#287744',
+  },
+  personShoulders: {
+    position: 'absolute',
+    width: 16,
+    height: 9,
+    bottom: 6,
+    borderTopLeftRadius: 9,
+    borderTopRightRadius: 9,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
+    backgroundColor: '#287744',
+  },
+  authPressed: {
+    opacity: 0.75,
   },
   location: {
     flexDirection: 'row',
@@ -480,6 +814,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 25,
+  },
+  dashboardNavButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  dashboardNavText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   navActive: {
     color: '#ffffff',
@@ -596,10 +941,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
   },
+  dotButton: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dotActive: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 18,
+    height: 7,
+    borderRadius: 5,
     backgroundColor: GREEN,
   },
   dot: {
@@ -859,5 +1210,135 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 12,
     marginTop: 4,
+  },
+  signupBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(20,40,27,0.5)',
+  },
+  signupCard: {
+    width: '100%',
+    maxWidth: 430,
+    padding: 24,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    shadowColor: '#173e27',
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    elevation: 10,
+  },
+  signupHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  signupIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#eaf4e8',
+  },
+  signupIconText: {
+    color: '#43804e',
+    fontSize: 19,
+  },
+  signupClose: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#f2f5f2',
+  },
+  signupCloseText: {
+    color: '#647166',
+    fontSize: 22,
+    lineHeight: 24,
+  },
+  signupTitle: {
+    color: '#25392b',
+    fontSize: 21,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    marginTop: 17,
+  },
+  signupSubtitle: {
+    color: '#78857b',
+    fontSize: 12,
+    marginTop: 5,
+    marginBottom: 18,
+  },
+  signupField: {
+    marginBottom: 12,
+  },
+  signupLabel: {
+    color: '#34463a',
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  signupInput: {
+    minHeight: 43,
+    paddingHorizontal: 12,
+    fontFamily: 'Poppins_400Regular',
+    borderWidth: 1,
+    borderColor: '#e1e9e2',
+    borderRadius: 10,
+    color: '#26392c',
+    fontSize: 11,
+    backgroundColor: '#fbfcfb',
+  },
+  signupMessage: {
+    color: '#9a5743',
+    fontSize: 10,
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  createAccountButton: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 4,
+    borderRadius: 11,
+    backgroundColor: GREEN,
+  },
+  createAccountText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  createAccountArrow: {
+    color: '#d8efcf',
+    fontSize: 17,
+  },
+  signupDisclaimer: {
+    color: '#8a958c',
+    fontSize: 9,
+    lineHeight: 14,
+    textAlign: 'center',
+    marginTop: 13,
+  },
+  accountPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 13,
+  },
+  accountPromptText: {
+    color: '#78857b',
+    fontSize: 10,
+  },
+  accountPromptLink: {
+    color: '#267145',
+    fontSize: 10,
+    fontWeight: '800',
   },
 });

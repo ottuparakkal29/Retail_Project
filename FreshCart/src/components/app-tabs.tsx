@@ -27,6 +27,11 @@ export default function AppTabs() {
           renderingMode="template"
         />
       </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="admin">
+        <NativeTabs.Trigger.Label>Dashboard</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="person.badge.key.fill" md="admin_panel_settings" />
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
