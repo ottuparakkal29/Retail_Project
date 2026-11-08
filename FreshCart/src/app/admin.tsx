@@ -95,37 +95,37 @@ const startingPartners: Partner[] = [
   },
 ];
 
+const partnerTypes = ['All types', 'Manufacturer', 'Retailer', 'Wholesaler', 'Distributor'] as const;
+
 export default function AdminScreen() {
   const isWide = useResponsiveBreakpoint(850);
   const [partners, setPartners] = useState(startingPartners);
   const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<(typeof partnerTypes)[number]>('All types');
   const [confirmDelete, setConfirmDelete] = useState<Partner | null>(null);
   const [notice, setNotice] = useState('');
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const [manufacturerSectionY, setManufacturerSectionY] = useState(0);
   const dashboardScroll = useRef<ScrollViewInstance>(null);
 
-  const pending = useMemo(
+  const filteredPartners = useMemo(
     () =>
-      partners.filter(
-        (partner) =>
-          partner.status === 'pending' &&
-          `${partner.company} ${partner.email} ${partner.phone} ${partner.category}`
-            .toLowerCase()
-            .includes(query.trim().toLowerCase()),
-      ),
-    [partners, query],
+      partners.filter((partner) => {
+        const matchesSearch = `${partner.company} ${partner.email} ${partner.phone} ${partner.category}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase());
+        const matchesType = typeFilter === 'All types' || partner.category === typeFilter;
+        return matchesSearch && matchesType;
+      }),
+    [partners, query, typeFilter],
+  );
+  const pending = useMemo(
+    () => filteredPartners.filter((partner) => partner.status === 'pending'),
+    [filteredPartners],
   );
   const approved = useMemo(
-    () =>
-      partners.filter(
-        (partner) =>
-          partner.status === 'approved' &&
-          `${partner.company} ${partner.email} ${partner.phone} ${partner.category}`
-            .toLowerCase()
-            .includes(query.trim().toLowerCase()),
-      ),
-    [partners, query],
+    () => filteredPartners.filter((partner) => partner.status === 'approved'),
+    [filteredPartners],
   );
 
   function approvePartner(partner: Partner) {
@@ -228,6 +228,7 @@ export default function AdminScreen() {
             <View style={styles.sidebarMenu}>
               <SidebarItem icon="⌂" label="Dashboard" active onPress={() => router.replace('/admin')} />
               <SidebarItem icon="▣" label="Partners" onPress={() => router.replace('/admin')} />
+              <SidebarItem icon="▤" label="Analytics" onPress={() => router.push('/analytics')} />
             </View>
             <View style={styles.sidebarBottom}>
               <View style={styles.sidebarPromo}>
@@ -254,13 +255,11 @@ export default function AdminScreen() {
                 <View style={styles.mobileHeaderBrand}>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Open dashboard navigation"
+                    accessibilityLabel="More dashboard options"
                     accessibilityState={{ expanded: mobileMenuVisible }}
                     onPress={() => setMobileMenuVisible(true)}
                     style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}>
-                    <View style={styles.menuLine} />
-                    <View style={styles.menuLine} />
-                    <View style={styles.menuLine} />
+                    <Text style={styles.menuDots}>⋮</Text>
                   </Pressable>
                   <View style={styles.compactBrand}>
                     <View style={styles.compactMark}><Text style={styles.leafMarkText}>F</Text></View>
@@ -323,6 +322,40 @@ export default function AdminScreen() {
               </View>
             </View>
 
+            <View style={styles.partnerFilters}>
+              <Text style={styles.partnerFilterLabel}>Business type</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.partnerFilterOptions}>
+                {partnerTypes.map((type) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: typeFilter === type }}
+                    key={type}
+                    onPress={() => setTypeFilter(type)}
+                    style={[
+                      styles.partnerFilterChip,
+                      typeFilter === type && styles.partnerFilterChipSelected,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.partnerFilterChipText,
+                        typeFilter === type && styles.partnerFilterChipTextSelected,
+                      ]}>
+                      {type}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {typeFilter !== 'All types' ? (
+                <Text style={styles.partnerFilterResult}>
+                  Showing {pending.length + approved.length} {typeFilter.toLowerCase()}
+                  {pending.length + approved.length === 1 ? '' : 's'}
+                </Text>
+              ) : null}
+            </View>
+
             {notice ? (
               <View accessibilityLiveRegion="polite" style={styles.notice}>
                 <Text style={styles.noticeText}>{notice}</Text>
@@ -347,7 +380,10 @@ export default function AdminScreen() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Refresh partner list"
-                  onPress={() => setQuery('')}
+                  onPress={() => {
+                    setQuery('');
+                    setTypeFilter('All types');
+                  }}
                   style={styles.refreshButton}>
                   <Text style={styles.refreshButtonText}>↻ <Text style={styles.actionLabel}>Refresh</Text></Text>
                 </Pressable>
@@ -437,6 +473,14 @@ export default function AdminScreen() {
                 icon="▣"
                 label="Partners"
                 onPress={() => navigateMobileSection('manufacturers')}
+              />
+              <SidebarItem
+                icon="▤"
+                label="Analytics"
+                onPress={() => {
+                  setMobileMenuVisible(false);
+                  router.push('/analytics');
+                }}
               />
             </View>
             <View style={styles.drawerBottom}>
@@ -700,11 +744,11 @@ const styles = StyleSheet.create({
     borderColor: '#e5ebe5',
     backgroundColor: '#ffffff',
   },
-  menuLine: {
-    width: 16,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: '#3e5a44',
+  menuDots: {
+    color: '#3e5a44',
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '700',
   },
   compactMark: {
     width: 30,
@@ -965,6 +1009,46 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 9,
     backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  partnerFilters: {
+    gap: 8,
+    marginBottom: 15,
+  },
+  partnerFilterLabel: {
+    color: '#68766b',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  partnerFilterOptions: {
+    flexDirection: 'row',
+    gap: 7,
+    paddingVertical: 2,
+  },
+  partnerFilterChip: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#e1e9e1',
+    borderRadius: 17,
+    backgroundColor: '#ffffff',
+  },
+  partnerFilterChipSelected: {
+    borderColor: '#218c3d',
+    backgroundColor: '#e9f8e5',
+  },
+  partnerFilterChipText: {
+    color: '#627067',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  partnerFilterChipTextSelected: {
+    color: '#216a35',
+    fontWeight: '800',
+  },
+  partnerFilterResult: {
+    color: '#78857b',
+    fontSize: 9,
   },
   searchBox: {
     height: 36,
