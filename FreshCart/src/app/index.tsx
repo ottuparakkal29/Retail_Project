@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
+import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import {
   Modal,
@@ -17,6 +18,24 @@ import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 const GREEN = '#138a39';
 const DARK_GREEN = '#07552c';
 const MUTED = '#68756b';
+
+const businessTypes = ['Manufacturer', 'Retailer', 'Wholesaler', 'Distributor'] as const;
+const keralaDistricts = [
+  'Thiruvananthapuram',
+  'Kollam',
+  'Pathanamthitta',
+  'Alappuzha',
+  'Kottayam',
+  'Idukki',
+  'Ernakulam',
+  'Thrissur',
+  'Palakkad',
+  'Malappuram',
+  'Kozhikode',
+  'Wayanad',
+  'Kannur',
+  'Kasaragod',
+];
 
 const categories = [
   { name: 'Fruits', image: require('../../assets/images/store/apples.jpg') },
@@ -87,6 +106,21 @@ export default function HomeScreen() {
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupMessage, setSignupMessage] = useState('');
+  const [signupMode, setSignupMode] = useState<'customer' | 'business'>('customer');
+  const [businessType, setBusinessType] = useState<(typeof businessTypes)[number] | null>(null);
+  const [businessName, setBusinessName] = useState('');
+  const [businessContact, setBusinessContact] = useState('');
+  const [businessEmail, setBusinessEmail] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [businessPassword, setBusinessPassword] = useState('');
+  const [businessLicenseNumber, setBusinessLicenseNumber] = useState('');
+  const [businessGstin, setBusinessGstin] = useState('');
+  const [businessFssai, setBusinessFssai] = useState('');
+  const [businessDistrict, setBusinessDistrict] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [licenseImageName, setLicenseImageName] = useState('');
+  const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
+  const [businessMessage, setBusinessMessage] = useState('');
   const [loginVisible, setLoginVisible] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -122,6 +156,53 @@ export default function HomeScreen() {
     }
 
     setLoginError('That username and password do not match. Please try again.');
+  }
+
+  async function chooseLicenseImage() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (!result.canceled) {
+        setLicenseImageName(result.assets[0].name);
+        setBusinessMessage('');
+      }
+    } catch (error) {
+      setBusinessMessage(
+        `Unable to open the image picker. ${
+          error instanceof Error ? error.message : 'Please try again.'
+        }`,
+      );
+    }
+  }
+
+  function submitBusinessRegistration() {
+    const phoneDigits = businessPhone.replace(/\D/g, '');
+    if (
+      !businessType ||
+      !businessName.trim() ||
+      !businessContact.trim() ||
+      !businessEmail.includes('@') ||
+      phoneDigits.length < 7 ||
+      phoneDigits.length > 15 ||
+      businessPassword.length < 8 ||
+      !businessLicenseNumber.trim() ||
+      !businessDistrict ||
+      !businessAddress.trim() ||
+      !licenseImageName
+    ) {
+      setBusinessMessage(
+        'Complete all required fields, choose a business type and district, upload a license image, and use a valid email, phone number, and password.',
+      );
+      return;
+    }
+
+    setBusinessMessage(
+      `${businessType} application details are complete. This demo does not save or send registrations yet.`,
+    );
   }
 
   return (
@@ -166,8 +247,11 @@ export default function HomeScreen() {
               <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Create a shopper account"
-                  onPress={() => setSignupVisible(true)}
+                  accessibilityLabel="Open customer and business registration"
+                  onPress={() => {
+                    setSignupVisible(true);
+                    setSignupMode('customer');
+                  }}
                   style={({ pressed }) => [
                     styles.signupButton,
                     pressed && styles.authPressed,
@@ -412,122 +496,369 @@ export default function HomeScreen() {
         onRequestClose={() => {
           setSignupVisible(false);
           setSignupMessage('');
+          setBusinessMessage('');
         }}
         transparent
         visible={signupVisible}>
         <View style={styles.signupBackdrop}>
           <View style={styles.signupCard}>
-            <View style={styles.signupHeading}>
-              <View style={styles.signupIcon}>
-                <Text style={styles.signupIconText}>✳</Text>
+            <ScrollView
+              contentContainerStyle={styles.signupScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={styles.signupScroll}>
+              <View style={styles.signupHeading}>
+                <View style={styles.signupIcon}>
+                  <Text style={styles.signupIconText}>✳</Text>
+                </View>
+                <Pressable
+                  accessibilityLabel="Close registration"
+                  onPress={() => {
+                    setSignupVisible(false);
+                    setSignupMessage('');
+                    setBusinessMessage('');
+                  }}
+                  style={styles.signupClose}>
+                  <Text style={styles.signupCloseText}>×</Text>
+                </Pressable>
               </View>
-              <Pressable
-                accessibilityLabel="Close signup"
-                onPress={() => {
-                  setSignupVisible(false);
-                  setSignupMessage('');
-                }}
-                style={styles.signupClose}>
-                <Text style={styles.signupCloseText}>×</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.signupTitle}>Join the FreshCart family</Text>
-            <Text style={styles.signupSubtitle}>Create your shopper account.</Text>
+              <Text style={styles.signupTitle}>Join the FreshCart family</Text>
+              <Text style={styles.signupSubtitle}>Choose the account you want to create.</Text>
+              <View style={styles.registrationModes}>
+                {(['customer', 'business'] as const).map((mode) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: signupMode === mode }}
+                    key={mode}
+                    onPress={() => {
+                      setSignupMode(mode);
+                      setSignupMessage('');
+                      setBusinessMessage('');
+                    }}
+                    style={[
+                      styles.registrationMode,
+                      signupMode === mode && styles.registrationModeSelected,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.registrationModeText,
+                        signupMode === mode && styles.registrationModeTextSelected,
+                      ]}>
+                      {mode === 'customer' ? 'Customer' : 'Business'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
 
-            <View style={styles.signupField}>
-              <Text style={styles.signupLabel}>Your name</Text>
-              <TextInput
-                accessibilityLabel="Your name"
-                onChangeText={setSignupName}
-                placeholder="Enter your name"
-                placeholderTextColor="#8b958d"
-                style={styles.signupInput}
-                value={signupName}
-              />
-            </View>
-            <View style={styles.signupField}>
-              <Text style={styles.signupLabel}>Email address</Text>
-              <TextInput
-                accessibilityLabel="Email address"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                onChangeText={setSignupEmail}
-                placeholder="you@example.com"
-                placeholderTextColor="#8b958d"
-                style={styles.signupInput}
-                value={signupEmail}
-              />
-            </View>
-            <View style={styles.signupField}>
-              <Text style={styles.signupLabel}>Phone number</Text>
-              <TextInput
-                accessibilityLabel="Phone number"
-                autoComplete="tel"
-                keyboardType="phone-pad"
-                onChangeText={setSignupPhone}
-                placeholder="Enter your phone number"
-                placeholderTextColor="#8b958d"
-                style={styles.signupInput}
-                value={signupPhone}
-              />
-            </View>
-            <View style={styles.signupField}>
-              <Text style={styles.signupLabel}>Password</Text>
-              <TextInput
-                accessibilityLabel="Create password"
-                onChangeText={setSignupPassword}
-                placeholder="At least 8 characters"
-                placeholderTextColor="#8b958d"
-                secureTextEntry
-                style={styles.signupInput}
-                value={signupPassword}
-              />
-            </View>
-            {signupMessage ? (
-              <Text accessibilityLiveRegion="polite" style={styles.signupMessage}>
-                {signupMessage}
-              </Text>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                const phoneDigits = signupPhone.replace(/\D/g, '');
-                if (
-                  !signupName.trim() ||
-                  !signupEmail.includes('@') ||
-                  phoneDigits.length < 7 ||
-                  phoneDigits.length > 15 ||
-                  signupPassword.length < 8
-                ) {
-                  setSignupMessage(
-                    'Enter your name, a valid email and phone number, and a password of at least 8 characters.',
-                  );
-                  return;
-                }
-                setSignupMessage(
-                  'Shopper signup is not connected yet. Your details have not been saved.',
-                );
-              }}
-              style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
-              <Text style={styles.createAccountText}>Create account</Text>
-              <Text style={styles.createAccountArrow}>→</Text>
-            </Pressable>
-            <Text style={styles.signupDisclaimer}>
-              Demo form only. Account creation requires a connected authentication service.
-            </Text>
-            <View style={styles.accountPrompt}>
-              <Text style={styles.accountPromptText}>Already have an account?</Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setSignupVisible(false);
-                  setSignupMessage('');
-                  setLoginError('');
-                  setLoginVisible(true);
-                }}>
-                <Text style={styles.accountPromptLink}>Log in</Text>
-              </Pressable>
-            </View>
+              {signupMode === 'customer' ? (
+                <>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Your name</Text>
+                    <TextInput
+                      accessibilityLabel="Your name"
+                      onChangeText={setSignupName}
+                      placeholder="Enter your name"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={signupName}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Email address</Text>
+                    <TextInput
+                      accessibilityLabel="Email address"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      onChangeText={setSignupEmail}
+                      placeholder="you@example.com"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={signupEmail}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Phone number</Text>
+                    <TextInput
+                      accessibilityLabel="Phone number"
+                      autoComplete="tel"
+                      keyboardType="phone-pad"
+                      onChangeText={setSignupPhone}
+                      placeholder="Enter your phone number"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={signupPhone}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Password</Text>
+                    <TextInput
+                      accessibilityLabel="Create password"
+                      onChangeText={setSignupPassword}
+                      placeholder="At least 8 characters"
+                      placeholderTextColor="#8b958d"
+                      secureTextEntry
+                      style={styles.signupInput}
+                      value={signupPassword}
+                    />
+                  </View>
+                  {signupMessage ? (
+                    <Text accessibilityLiveRegion="polite" style={styles.signupMessage}>
+                      {signupMessage}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      const phoneDigits = signupPhone.replace(/\D/g, '');
+                      if (
+                        !signupName.trim() ||
+                        !signupEmail.includes('@') ||
+                        phoneDigits.length < 7 ||
+                        phoneDigits.length > 15 ||
+                        signupPassword.length < 8
+                      ) {
+                        setSignupMessage(
+                          'Enter your name, a valid email and phone number, and a password of at least 8 characters.',
+                        );
+                        return;
+                      }
+                      setSignupMessage(
+                        'Shopper signup is not connected yet. Your details have not been saved.',
+                      );
+                    }}
+                    style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
+                    <Text style={styles.createAccountText}>Create customer account</Text>
+                    <Text style={styles.createAccountArrow}>→</Text>
+                  </Pressable>
+                  <Text style={styles.signupDisclaimer}>
+                    Demo form only. Account creation requires a connected authentication service.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.businessFormIntro}>
+                    Register your organization once and select the role that best describes your business.
+                  </Text>
+                  <Text style={styles.signupLabel}>I am a</Text>
+                  <View style={styles.businessTypes}>
+                    {businessTypes.map((type) => (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: businessType === type }}
+                        key={type}
+                        onPress={() => setBusinessType(type)}
+                        style={[
+                          styles.businessTypeButton,
+                          businessType === type && styles.businessTypeButtonSelected,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.businessTypeText,
+                            businessType === type && styles.businessTypeTextSelected,
+                          ]}>
+                          {type}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Business name *</Text>
+                    <TextInput
+                      accessibilityLabel="Business name"
+                      onChangeText={setBusinessName}
+                      placeholder="Registered business name"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessName}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Authorized contact person *</Text>
+                    <TextInput
+                      accessibilityLabel="Authorized contact person"
+                      onChangeText={setBusinessContact}
+                      placeholder="Full name"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessContact}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Business email *</Text>
+                    <TextInput
+                      accessibilityLabel="Business email"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      onChangeText={setBusinessEmail}
+                      placeholder="business@example.com"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessEmail}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Phone number *</Text>
+                    <TextInput
+                      accessibilityLabel="Business phone number"
+                      autoComplete="tel"
+                      keyboardType="phone-pad"
+                      onChangeText={setBusinessPhone}
+                      placeholder="Enter business phone number"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessPhone}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Create password *</Text>
+                    <TextInput
+                      accessibilityLabel="Create business account password"
+                      onChangeText={setBusinessPassword}
+                      placeholder="At least 8 characters"
+                      placeholderTextColor="#8b958d"
+                      secureTextEntry
+                      style={styles.signupInput}
+                      value={businessPassword}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Business license / registration number *</Text>
+                    <TextInput
+                      accessibilityLabel="Business license or registration number"
+                      onChangeText={setBusinessLicenseNumber}
+                      placeholder="Enter license or registration number"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessLicenseNumber}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>GSTIN (optional)</Text>
+                    <TextInput
+                      accessibilityLabel="GSTIN"
+                      autoCapitalize="characters"
+                      onChangeText={setBusinessGstin}
+                      placeholder="Enter GSTIN"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessGstin}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>FSSAI license (if applicable)</Text>
+                    <TextInput
+                      accessibilityLabel="FSSAI license number"
+                      onChangeText={setBusinessFssai}
+                      placeholder="Enter FSSAI license number"
+                      placeholderTextColor="#8b958d"
+                      style={styles.signupInput}
+                      value={businessFssai}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>District *</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select district${businessDistrict ? `, ${businessDistrict}` : ''}`}
+                      accessibilityState={{ expanded: districtPickerVisible }}
+                      onPress={() => setDistrictPickerVisible((visible) => !visible)}
+                      style={styles.selectField}>
+                      <Text
+                        style={[
+                          styles.selectFieldText,
+                          !businessDistrict && styles.selectFieldPlaceholder,
+                        ]}>
+                        {businessDistrict || 'Choose your Kerala district'}
+                      </Text>
+                      <Text style={styles.selectChevron}>{districtPickerVisible ? '⌃' : '⌄'}</Text>
+                    </Pressable>
+                    {districtPickerVisible ? (
+                      <View style={styles.districtOptions}>
+                        {keralaDistricts.map((district) => (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: businessDistrict === district }}
+                            key={district}
+                            onPress={() => {
+                              setBusinessDistrict(district);
+                              setDistrictPickerVisible(false);
+                            }}
+                            style={[
+                              styles.districtOption,
+                              businessDistrict === district && styles.districtOptionSelected,
+                            ]}>
+                            <Text
+                              style={[
+                                styles.districtOptionText,
+                                businessDistrict === district && styles.districtOptionTextSelected,
+                              ]}>
+                              {district}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Business address *</Text>
+                    <TextInput
+                      accessibilityLabel="Business address"
+                      multiline
+                      onChangeText={setBusinessAddress}
+                      placeholder="Street, town, and PIN code"
+                      placeholderTextColor="#8b958d"
+                      style={[styles.signupInput, styles.addressInput]}
+                      value={businessAddress}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>License image *</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={chooseLicenseImage}
+                      style={({ pressed }) => [
+                        styles.uploadButton,
+                        pressed && styles.authPressed,
+                      ]}>
+                      <Text style={styles.uploadIcon}>↑</Text>
+                      <Text style={styles.uploadButtonText}>
+                        {licenseImageName || 'Choose license image'}
+                      </Text>
+                    </Pressable>
+                    <Text style={styles.uploadHint}>Select a JPG, PNG, or other image from your device.</Text>
+                  </View>
+                  {businessMessage ? (
+                    <Text accessibilityLiveRegion="polite" style={styles.signupMessage}>
+                      {businessMessage}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={submitBusinessRegistration}
+                    style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
+                    <Text style={styles.createAccountText}>Submit business registration</Text>
+                    <Text style={styles.createAccountArrow}>→</Text>
+                  </Pressable>
+                  <Text style={styles.signupDisclaimer}>
+                    Demo form only. Registration details and documents are not saved or sent.
+                  </Text>
+                </>
+              )}
+              <View style={styles.accountPrompt}>
+                <Text style={styles.accountPromptText}>Already have an account?</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSignupVisible(false);
+                    setSignupMessage('');
+                    setBusinessMessage('');
+                    setLoginError('');
+                    setLoginVisible(true);
+                  }}>
+                  <Text style={styles.accountPromptLink}>Log in</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1221,6 +1552,7 @@ const styles = StyleSheet.create({
   signupCard: {
     width: '100%',
     maxWidth: 430,
+    maxHeight: '90%',
     padding: 24,
     borderRadius: 22,
     backgroundColor: '#ffffff',
@@ -1229,6 +1561,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 30,
     elevation: 10,
+  },
+  signupScroll: {
+    flexShrink: 1,
+  },
+  signupScrollContent: {
+    paddingBottom: 2,
   },
   signupHeading: {
     flexDirection: 'row',
@@ -1273,6 +1611,71 @@ const styles = StyleSheet.create({
     marginTop: 5,
     marginBottom: 18,
   },
+  registrationModes: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 4,
+    marginBottom: 18,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f1',
+  },
+  registrationMode: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 38,
+    borderRadius: 9,
+  },
+  registrationModeSelected: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#173e27',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  registrationModeText: {
+    color: '#78857b',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  registrationModeTextSelected: {
+    color: DARK_GREEN,
+  },
+  businessFormIntro: {
+    color: MUTED,
+    fontSize: 10,
+    lineHeight: 15,
+    marginBottom: 12,
+  },
+  businessTypes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginBottom: 14,
+  },
+  businessTypeButton: {
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#dce7dc',
+    borderRadius: 18,
+    backgroundColor: '#fbfcfb',
+  },
+  businessTypeButtonSelected: {
+    borderColor: GREEN,
+    backgroundColor: '#eaf5e9',
+  },
+  businessTypeText: {
+    color: '#647166',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  businessTypeTextSelected: {
+    color: DARK_GREEN,
+  },
   signupField: {
     marginBottom: 12,
   },
@@ -1292,6 +1695,93 @@ const styles = StyleSheet.create({
     color: '#26392c',
     fontSize: 11,
     backgroundColor: '#fbfcfb',
+  },
+  selectField: {
+    minHeight: 43,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#e1e9e2',
+    borderRadius: 10,
+    backgroundColor: '#fbfcfb',
+  },
+  selectFieldText: {
+    color: '#26392c',
+    fontSize: 11,
+  },
+  selectFieldPlaceholder: {
+    color: '#8b958d',
+  },
+  selectChevron: {
+    color: '#647166',
+    fontSize: 16,
+  },
+  districtOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 7,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#e1e9e2',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+  },
+  districtOption: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#f7f9f7',
+  },
+  districtOptionSelected: {
+    backgroundColor: '#eaf5e9',
+  },
+  districtOptionText: {
+    color: '#647166',
+    fontSize: 9,
+  },
+  districtOptionTextSelected: {
+    color: DARK_GREEN,
+    fontWeight: '700',
+  },
+  addressInput: {
+    minHeight: 76,
+    paddingTop: 10,
+    textAlignVertical: 'top',
+  },
+  uploadButton: {
+    minHeight: 45,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#a8c6ab',
+    borderRadius: 10,
+    backgroundColor: '#f7fbf6',
+  },
+  uploadIcon: {
+    color: GREEN,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  uploadButtonText: {
+    flexShrink: 1,
+    color: '#347044',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  uploadHint: {
+    color: '#8a958c',
+    fontSize: 9,
+    lineHeight: 13,
+    marginTop: 5,
   },
   signupMessage: {
     color: '#9a5743',

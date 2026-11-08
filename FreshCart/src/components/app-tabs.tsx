@@ -32,6 +32,11 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>Dashboard</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="person.badge.key.fill" md="admin_panel_settings" />
       </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="analytics">
+        <NativeTabs.Trigger.Label>Analytics</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="chart.bar.fill" md="bar_chart" />
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
