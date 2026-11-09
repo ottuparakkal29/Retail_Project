@@ -13,6 +13,7 @@ import {
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { CartProvider } from '@/contexts/cart-context';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -33,7 +34,9 @@ export default function TabLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      <AppTabs />
+      <CartProvider>
+        <AppTabs />
+      </CartProvider>
     </ThemeProvider>
   );
 }

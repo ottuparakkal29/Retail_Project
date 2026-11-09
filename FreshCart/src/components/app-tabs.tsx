@@ -37,6 +37,11 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>Analytics</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="chart.bar.fill" md="bar_chart" />
       </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="cart">
+        <NativeTabs.Trigger.Label>Cart</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="cart.fill" md="shopping_cart" />
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
