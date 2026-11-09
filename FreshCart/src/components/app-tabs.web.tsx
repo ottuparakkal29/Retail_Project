@@ -6,12 +6,13 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
+import { usePathname } from 'expo-router';
 import { Pressable, View, StyleSheet } from 'react-native';
 
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useCart } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 
-import { ThemedText } from './themed-text';
+import { AppText as Text } from './app-text';
 
 export default function AppTabs() {
   return (
@@ -20,39 +21,66 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
-          </TabTrigger>
-          <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explores</TabButton>
-          </TabTrigger>
-          <TabTrigger name="admin" href="/admin" asChild>
-            <TabButton>Dashboard</TabButton>
-          </TabTrigger>
-          <TabTrigger name="analytics" href="/analytics" asChild>
-            <TabButton>Analytics</TabButton>
+            <TabButton label="Home">Home</TabButton>
           </TabTrigger>
           <TabTrigger name="cart" href="/cart" asChild>
-            <TabButton>Cart</TabButton>
+            <TabButton label="Cart">Cart</TabButton>
           </TabTrigger>
+          <TabTrigger name="admin" href="/admin" asChild>
+            <TabButton label="Dashboard">Dashboard</TabButton>
+          </TabTrigger>
+          <TabTrigger name="profile" href="/profile" asChild>
+            <TabButton label="Profile">Profile</TabButton>
+          </TabTrigger>
+          <TabTrigger name="analytics" href="/analytics" style={styles.hiddenTrigger} />
         </CustomTabList>
       </TabList>
     </Tabs>
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+const tabIcons = {
+  Home: '⌂',
+  Cart: '🛍',
+  Dashboard: '▦',
+  Profile: '',
+} as const;
+
+export function TabButton({
+  children,
+  isFocused,
+  label,
+  ...props
+}: TabTriggerSlotProps & { label: keyof typeof tabIcons }) {
   const { ref, ...pressableProps } = props;
   void ref;
+  const { itemCount } = useCart();
+  const pathname = usePathname();
+  const selected = isFocused || (label === 'Dashboard' && pathname === '/analytics');
 
   return (
     <Pressable
       {...pressableProps}
-      style={({ pressed }) => [styles.tabButton, isFocused && styles.tabButtonSelected, pressed && styles.pressed]}>
-      <View style={styles.tabButtonView}>
-        <ThemedText type="smallBold" style={isFocused ? styles.selectedLabel : styles.label}>
-          {children}
-        </ThemedText>
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [styles.tabButton, pressed && styles.pressed]}>
+      <View style={styles.iconWrap}>
+        {label === 'Profile' ? (
+          <View style={styles.profileIcon}>
+            <View style={[styles.profileHead, selected && styles.selectedProfileIcon]} />
+            <View style={[styles.profileShoulders, selected && styles.selectedProfileIcon]} />
+          </View>
+        ) : (
+          <Text style={[styles.tabIcon, selected && styles.selectedIcon]}>{tabIcons[label]}</Text>
+        )}
+        {label === 'Cart' && itemCount > 0 ? (
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{itemCount > 9 ? '9+' : itemCount}</Text>
+          </View>
+        ) : null}
       </View>
+      <Text style={[styles.tabLabel, selected && styles.selectedLabel]}>{children}</Text>
     </Pressable>
   );
 }
@@ -62,68 +90,127 @@ export function CustomTabList(props: TabListProps) {
 
   return (
     <View {...props} style={[styles.tabListContainer, isDesktop && styles.desktopTabList]}>
-      <View style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          FreshCart
-        </ThemedText>
-        {props.children}
-      </View>
+      <View style={styles.innerContainer}>{props.children}</View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  hiddenTrigger: {
+    display: 'none',
+  },
   tabListContainer: {
     position: 'absolute',
-    bottom: 0,
-    width: '100%',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    bottom: 10,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    borderTopWidth: 1,
-    borderTopColor: '#e8eee8',
   },
   desktopTabList: {
     display: 'none',
   },
   innerContainer: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: 28,
+    width: '100%',
+    maxWidth: 480,
+    minHeight: 66,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    flexGrow: 1,
-    gap: Spacing.two,
-    maxWidth: MaxContentWidth,
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     backgroundColor: '#ffffff',
-  },
-  brandText: {
-    color: '#07552c',
-    marginRight: 'auto',
+    borderWidth: 1,
+    borderColor: '#e9efe9',
+    shadowColor: '#18351f',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   pressed: {
-    opacity: 0.7,
+    opacity: 0.78,
   },
   tabButton: {
-    borderRadius: 20,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
   },
-  tabButtonSelected: {
-    backgroundColor: '#dff3e3',
+  iconWrap: {
+    width: 34,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  tabButtonView: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    borderRadius: 20,
-    backgroundColor: 'transparent',
+  tabIcon: {
+    color: '#79867b',
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '700',
   },
-  label: {
-    color: '#68756b',
+  selectedIcon: {
+    color: '#138a39',
+  },
+  profileIcon: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 1,
+  },
+  profileHead: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#79867b',
+  },
+  profileShoulders: {
+    width: 15,
+    height: 8,
+    marginTop: 2,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+    backgroundColor: '#79867b',
+  },
+  selectedProfileIcon: {
+    backgroundColor: '#138a39',
+  },
+  tabLabel: {
+    color: '#78837a',
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '500',
   },
   selectedLabel: {
     color: '#138a39',
+    fontWeight: '700',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 15,
+    height: 15,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e45d4d',
+    borderWidth: 1,
+    borderColor: '#ffffff',
+  },
+  cartBadgeText: {
+    color: '#ffffff',
+    fontSize: 8,
+    lineHeight: 11,
+    fontWeight: '700',
   },
 });
