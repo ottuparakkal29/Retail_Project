@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,12 +30,9 @@ const monthlyOrders = [
 
 const chartMax = Math.max(...monthlyOrders.map((item) => item.count));
 const maxOrdersByType = Math.max(...salesByBusinessType.map((item) => item.orders));
-const plotHeight = 142;
-const plotTop = 18;
 
 export default function AnalyticsScreen() {
   const isWide = useResponsiveBreakpoint(850);
-  const [chartWidth, setChartWidth] = useState(0);
   const [detailsWidth, setDetailsWidth] = useState(0);
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const totals = salesByBusinessType.reduce(
@@ -47,18 +43,6 @@ export default function AnalyticsScreen() {
     }),
     { orders: 0, productsSold: 0, revenue: 0 },
   );
-  const points = monthlyOrders.map((item, index) => ({
-    ...item,
-    x: chartWidth > 0
-      ? 12 + (index * (chartWidth - 24)) / (monthlyOrders.length - 1)
-      : 0,
-    y: plotTop + plotHeight - (item.count / chartMax) * plotHeight,
-  }));
-
-  function updateChartWidth(event: LayoutChangeEvent) {
-    setChartWidth(event.nativeEvent.layout.width);
-  }
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.appFrame}>
@@ -180,54 +164,20 @@ export default function AnalyticsScreen() {
                   </View>
                   <Text style={styles.chartIcon}>⌁</Text>
                 </View>
-                <View onLayout={updateChartWidth} style={styles.linePlot}>
-                  {[0, 1, 2, 3].map((line) => (
-                    <View
-                      key={line}
-                      style={[styles.gridLine, { top: plotTop + (plotHeight * line) / 3 }]}
-                    />
-                  ))}
-                  {chartWidth > 0
-                    ? points.slice(0, -1).map((point, index) => {
-                        const nextPoint = points[index + 1];
-                        const deltaX = nextPoint.x - point.x;
-                        const deltaY = nextPoint.y - point.y;
-                        const length = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                        const angle = `${(Math.atan2(deltaY, deltaX) * 180) / Math.PI}deg`;
-
-                        return (
-                          <View
-                            key={point.month}
-                            style={[
-                              styles.lineSegment,
-                              {
-                                left: (point.x + nextPoint.x - length) / 2,
-                                top: (point.y + nextPoint.y) / 2,
-                                width: length,
-                                transform: [{ rotate: angle }],
-                              },
-                            ]}
-                          />
-                        );
-                      })
-                    : null}
-                  {points.map((point) => (
-                    <View
-                      key={point.month}
-                      style={[styles.pointWrap, { left: point.x - 12, top: point.y - 20 }]}>
-                      <Text style={styles.pointValue}>{point.count}</Text>
-                    </View>
-                  ))}
-                  {points.map((point) => (
-                    <View
-                      key={`${point.month}-dot`}
-                      style={[styles.lineDot, { left: point.x - 5, top: point.y - 5 }]}
-                    />
-                  ))}
-                </View>
-                <View style={styles.monthLabels}>
+                <View style={styles.monthlyChart}>
                   {monthlyOrders.map((item) => (
-                    <Text key={item.month} style={styles.monthLabel}>{item.month}</Text>
+                    <View key={item.month} style={styles.monthlyBarItem}>
+                      <Text style={styles.monthlyBarValue}>{item.count}</Text>
+                      <View style={styles.monthlyBarTrack}>
+                        <View
+                          style={[
+                            styles.monthlyBar,
+                            { height: `${(item.count / chartMax) * 100}%` },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.monthlyBarLabel}>{item.month}</Text>
+                    </View>
                   ))}
                 </View>
                 <View style={styles.chartLegend}>
@@ -830,52 +780,43 @@ const styles = StyleSheet.create({
     color: '#829087',
     fontSize: 8,
   },
-  linePlot: {
+  monthlyChart: {
     height: 180,
-    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-around',
+    gap: 4,
     marginTop: 14,
-    overflow: 'hidden',
   },
-  gridLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: '#edf1ed',
-  },
-  lineSegment: {
-    position: 'absolute',
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#278c50',
-    transformOrigin: 'center',
-  },
-  lineDot: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderWidth: 2,
-    borderColor: '#ffffff',
-    borderRadius: 6,
-    backgroundColor: '#278c50',
-  },
-  pointWrap: {
-    position: 'absolute',
-    width: 24,
+  monthlyBarItem: {
+    flex: 1,
+    height: '100%',
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 5,
   },
-  pointValue: {
+  monthlyBarValue: {
     color: '#55715b',
     fontSize: 8,
     fontWeight: '700',
   },
-  monthLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
+  monthlyBarTrack: {
+    width: '70%',
+    maxWidth: 34,
+    height: 130,
+    justifyContent: 'flex-end',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    backgroundColor: '#f1f5f1',
   },
-  monthLabel: {
-    flex: 1,
+  monthlyBar: {
+    width: '100%',
+    minHeight: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    backgroundColor: '#278c50',
+  },
+  monthlyBarLabel: {
     color: '#87938a',
     fontSize: 8,
     textAlign: 'center',
