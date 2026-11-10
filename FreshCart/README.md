@@ -10,7 +10,18 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Configure Supabase
+
+   Copy `.env.example` to `.env.local` and set your Supabase project URL and
+   publishable key. These `EXPO_PUBLIC_` values are included in the app bundle;
+   never use a Supabase `service_role` or secret key here.
+
+   Run the SQL files in `supabase/migrations` in filename order in the Supabase
+   SQL Editor. The business-registration migration enables private license
+   uploads and creates linked `profiles` and `business_profiles` records when
+   users register.
+
+3. Start the app
 
    ```bash
    npx expo start
