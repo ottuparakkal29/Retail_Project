@@ -16,6 +16,7 @@ import { AppText as Text } from '@/components/app-text';
 import { products } from '@/constants/products';
 import { useCart } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
+import { supabase } from '@/lib/supabase';
 
 const GREEN = '#138a39';
 const DARK_GREEN = '#07552c';
@@ -93,6 +94,8 @@ export default function HomeScreen() {
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupMessage, setSignupMessage] = useState('');
+  const [signupMessageType, setSignupMessageType] = useState<'error' | 'success'>('error');
+  const [signupSubmitting, setSignupSubmitting] = useState(false);
   const [signupMode, setSignupMode] = useState<'customer' | 'business'>('customer');
   const [businessType, setBusinessType] = useState<(typeof businessTypes)[number] | null>(null);
   const [businessName, setBusinessName] = useState('');
@@ -106,8 +109,11 @@ export default function HomeScreen() {
   const [businessDistrict, setBusinessDistrict] = useState('');
   const [businessAddress, setBusinessAddress] = useState('');
   const [licenseImageName, setLicenseImageName] = useState('');
+  const [licenseImage, setLicenseImage] =
+    useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
   const [businessMessage, setBusinessMessage] = useState('');
+  const [businessSubmitting, setBusinessSubmitting] = useState(false);
   const [loginVisible, setLoginVisible] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -145,6 +151,68 @@ export default function HomeScreen() {
     setLoginError('That username and password do not match. Please try again.');
   }
 
+  async function createCustomerAccount() {
+    const fullName = signupName.trim();
+    const email = signupEmail.trim().toLowerCase();
+    const phone = signupPhone.trim();
+    const phoneDigits = phone.replace(/\D/g, '');
+
+    setSignupMessageType('error');
+    if (
+      !fullName ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      phoneDigits.length < 7 ||
+      phoneDigits.length > 15 ||
+      signupPassword.length < 8
+    ) {
+      setSignupMessage(
+        'Enter your name, a valid email and phone number, and a password of at least 8 characters.',
+      );
+      return;
+    }
+
+    setSignupSubmitting(true);
+    setSignupMessage('');
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: signupPassword,
+        options: {
+          data: {
+            full_name: fullName,
+            phone,
+          },
+        },
+      });
+
+      if (error) {
+        setSignupMessage(error.message);
+        return;
+      }
+
+      if (!data.user) {
+        setSignupMessage('Supabase did not return a user. Please try again.');
+        return;
+      }
+
+      setSignupMessageType('success');
+      setSignupMessage(
+        data.session
+          ? 'Your customer account has been created.'
+          : 'Account created, but Supabase is still requiring email confirmation. Turn off Confirm email in your Supabase Auth settings to allow sign-in without verification.',
+      );
+      setSignupPassword('');
+    } catch (error) {
+      setSignupMessage(
+        `Unable to create your account. ${
+          error instanceof Error ? error.message : 'Please try again.'
+        }`,
+      );
+    } finally {
+      setSignupSubmitting(false);
+    }
+  }
+
   async function chooseLicenseImage() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -154,6 +222,7 @@ export default function HomeScreen() {
       });
 
       if (!result.canceled) {
+        setLicenseImage(result.assets[0]);
         setLicenseImageName(result.assets[0].name);
         setBusinessMessage('');
       }
@@ -166,20 +235,21 @@ export default function HomeScreen() {
     }
   }
 
-  function submitBusinessRegistration() {
+  async function submitBusinessRegistration() {
     const phoneDigits = businessPhone.replace(/\D/g, '');
+    const email = businessEmail.trim().toLowerCase();
     if (
       !businessType ||
       !businessName.trim() ||
       !businessContact.trim() ||
-      !businessEmail.includes('@') ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
       phoneDigits.length < 7 ||
       phoneDigits.length > 15 ||
       businessPassword.length < 8 ||
       !businessLicenseNumber.trim() ||
       !businessDistrict ||
       !businessAddress.trim() ||
-      !licenseImageName
+      !licenseImage
     ) {
       setBusinessMessage(
         'Complete all required fields, choose a business type and district, upload a license image, and use a valid email, phone number, and password.',
@@ -187,9 +257,85 @@ export default function HomeScreen() {
       return;
     }
 
-    setBusinessMessage(
-      `${businessType} application details are complete. This demo does not save or send registrations yet.`,
-    );
+    setBusinessSubmitting(true);
+    setBusinessMessage('');
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: businessPassword,
+        options: {
+          data: {
+            account_type: 'business',
+            full_name: businessContact.trim(),
+            phone: businessPhone.trim(),
+            business_name: businessName.trim(),
+            business_type: businessType,
+            contact_name: businessContact.trim(),
+            contact_email: email,
+            contact_phone: businessPhone.trim(),
+            license_number: businessLicenseNumber.trim(),
+            gstin: businessGstin.trim() || null,
+            fssai_number: businessFssai.trim() || null,
+            district: businessDistrict,
+            address: businessAddress.trim(),
+          },
+        },
+      });
+
+      if (error) {
+        setBusinessMessage(error.message);
+        return;
+      }
+
+      if (!data.user) {
+        setBusinessMessage('Supabase did not return a user. Please try again.');
+        return;
+      }
+
+      if (!data.session) {
+        setBusinessMessage(
+          'Business account created, but email confirmation is still required. The application details were saved; sign in after confirmation to upload the license image.',
+        );
+        setBusinessPassword('');
+        return;
+      }
+
+      const safeFileName = licenseImage.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const documentPath = `${data.user.id}/${Date.now()}-${safeFileName}`;
+      const fileResponse = await fetch(licenseImage.uri);
+      if (!fileResponse.ok) {
+        throw new Error('Could not read the selected license image.');
+      }
+      const file = await fileResponse.blob();
+      const { error: uploadError } = await supabase.storage
+        .from('business-licenses')
+        .upload(documentPath, file, {
+          contentType: licenseImage.mimeType ?? 'application/octet-stream',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(`Business application saved, but license upload failed: ${uploadError.message}`);
+      }
+
+      const { error: pathError } = await supabase.rpc('set_business_license_path', {
+        p_path: documentPath,
+      });
+      if (pathError) {
+        throw new Error(
+          `License uploaded, but its profile link could not be saved: ${pathError.message}`,
+        );
+      }
+
+      setBusinessMessage('Business application submitted. Your license document was uploaded for review.');
+      setBusinessPassword('');
+    } catch (error) {
+      setBusinessMessage(
+        error instanceof Error ? error.message : 'Unable to submit the business application.',
+      );
+    } finally {
+      setBusinessSubmitting(false);
+    }
   }
 
   return (
@@ -593,36 +739,33 @@ export default function HomeScreen() {
                     />
                   </View>
                   {signupMessage ? (
-                    <Text accessibilityLiveRegion="polite" style={styles.signupMessage}>
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      style={[
+                        styles.signupMessage,
+                        signupMessageType === 'success' && styles.signupSuccessMessage,
+                      ]}>
                       {signupMessage}
                     </Text>
                   ) : null}
                   <Pressable
                     accessibilityRole="button"
-                    onPress={() => {
-                      const phoneDigits = signupPhone.replace(/\D/g, '');
-                      if (
-                        !signupName.trim() ||
-                        !signupEmail.includes('@') ||
-                        phoneDigits.length < 7 ||
-                        phoneDigits.length > 15 ||
-                        signupPassword.length < 8
-                      ) {
-                        setSignupMessage(
-                          'Enter your name, a valid email and phone number, and a password of at least 8 characters.',
-                        );
-                        return;
-                      }
-                      setSignupMessage(
-                        'Shopper signup is not connected yet. Your details have not been saved.',
-                      );
-                    }}
-                    style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
-                    <Text style={styles.createAccountText}>Create customer account</Text>
-                    <Text style={styles.createAccountArrow}>→</Text>
+                    disabled={signupSubmitting}
+                    onPress={createCustomerAccount}
+                    style={({ pressed }) => [
+                      styles.createAccountButton,
+                      pressed && styles.authPressed,
+                      signupSubmitting && styles.authButtonDisabled,
+                    ]}>
+                    <Text style={styles.createAccountText}>
+                      {signupSubmitting ? 'Creating account...' : 'Create customer account'}
+                    </Text>
+                    {!signupSubmitting ? (
+                      <Text style={styles.createAccountArrow}>→</Text>
+                    ) : null}
                   </Pressable>
                   <Text style={styles.signupDisclaimer}>
-                    Demo form only. Account creation requires a connected authentication service.
+                    Your password is securely handled by Supabase Auth.
                   </Text>
                 </>
               ) : (
@@ -825,13 +968,22 @@ export default function HomeScreen() {
                   ) : null}
                   <Pressable
                     accessibilityRole="button"
+                    disabled={businessSubmitting}
                     onPress={submitBusinessRegistration}
-                    style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
-                    <Text style={styles.createAccountText}>Submit business registration</Text>
-                    <Text style={styles.createAccountArrow}>→</Text>
+                    style={({ pressed }) => [
+                      styles.createAccountButton,
+                      pressed && styles.authPressed,
+                      businessSubmitting && styles.authButtonDisabled,
+                    ]}>
+                    <Text style={styles.createAccountText}>
+                      {businessSubmitting ? 'Submitting application...' : 'Submit business registration'}
+                    </Text>
+                    {!businessSubmitting ? (
+                      <Text style={styles.createAccountArrow}>→</Text>
+                    ) : null}
                   </Pressable>
                   <Text style={styles.signupDisclaimer}>
-                    Demo form only. Registration details and documents are not saved or sent.
+                    Your application and license image are securely submitted for review.
                   </Text>
                 </>
               )}
@@ -1062,6 +1214,9 @@ const styles = StyleSheet.create({
   },
   authPressed: {
     opacity: 0.75,
+  },
+  authButtonDisabled: {
+    opacity: 0.65,
   },
   location: {
     flexDirection: 'row',
@@ -1779,6 +1934,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 16,
     marginBottom: 10,
+  },
+  signupSuccessMessage: {
+    color: DARK_GREEN,
   },
   createAccountButton: {
     minHeight: 46,
