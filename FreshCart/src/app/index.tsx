@@ -40,6 +40,16 @@ const keralaDistricts = [
   'Kasaragod',
 ];
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = error.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
+
 const categories = [
   { name: 'Fruits', image: require('../../assets/images/store/apples.jpg') },
   { name: 'Vegetables', image: require('../../assets/images/store/spinach.jpg') },
@@ -118,14 +128,49 @@ export default function HomeScreen() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
+  const [signedInUserId, setSignedInUserId] = useState<string | null>(null);
+  const [signedInRole, setSignedInRole] = useState<string | null>(null);
+  const [celebration, setCelebration] = useState<{ title: string; message: string } | null>(null);
+  const [homeNotice, setHomeNotice] = useState('');
+  const [homeNoticeIsError, setHomeNoticeIsError] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setActiveSlide((current) => (current + 1) % heroSlides.length);
     }, 5000);
-    return () => clearInterval(timer);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSignedInEmail(session?.user.email ?? null);
+      setSignedInUserId(session?.user.id ?? null);
+      setSignedInRole(null);
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!signedInUserId) return;
+
+    let active = true;
+    void supabase
+      .from('profiles')
+      .select('role')
+      .eq('auth_user_id', signedInUserId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (active && !error) setSignedInRole(data?.role ?? null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [signedInUserId]);
 
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -139,16 +184,51 @@ export default function HomeScreen() {
     });
   }, [query, selectedCategory]);
 
-  function signIn() {
-    if (loginUsername.trim() === 'admin' && loginPassword === 'admin') {
-      setLoginVisible(false);
-      setLoginError('');
-      setLoginPassword('');
-      router.push('/admin');
+  async function signIn() {
+    const email = loginUsername.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !loginPassword) {
+      setLoginError('Enter a valid email address and password.');
       return;
     }
 
-    setLoginError('That username and password do not match. Please try again.');
+    setLoginSubmitting(true);
+    setLoginError('');
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: loginPassword,
+      });
+      if (error) throw error;
+      if (!data.user) throw new Error('Supabase did not return a signed-in user.');
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('auth_user_id', data.user.id)
+        .maybeSingle();
+      if (profileError) {
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) throw signOutError;
+        throw profileError;
+      }
+      setLoginVisible(false);
+      setLoginError('');
+      setLoginUsername('');
+      setLoginPassword('');
+      if (profile?.role === 'admin') {
+        router.push({ pathname: '/admin', params: { welcome: 'true' } });
+      } else {
+        setCelebration({
+          title: 'Welcome back!',
+          message: 'You’re signed in and ready to shop fresh.',
+        });
+        router.replace('/');
+      }
+    } catch (error) {
+      setLoginError(getErrorMessage(error, 'Unknown sign-in error. Please try again.'));
+    } finally {
+      setLoginSubmitting(false);
+    }
   }
 
   async function createCustomerAccount() {
@@ -195,12 +275,15 @@ export default function HomeScreen() {
         return;
       }
 
-      setSignupMessageType('success');
-      setSignupMessage(
-        data.session
-          ? 'Your customer account has been created.'
-          : 'Account created, but Supabase is still requiring email confirmation. Turn off Confirm email in your Supabase Auth settings to allow sign-in without verification.',
-      );
+      setCelebration({
+        title: 'Welcome to FreshCart!',
+        message: data.session
+          ? 'Your account is ready. Let’s find something fresh.'
+          : 'Your account is created. Confirm your email to get started.',
+      });
+      setSignupVisible(false);
+      router.replace('/');
+      setSignupMessage('');
       setSignupPassword('');
     } catch (error) {
       setSignupMessage(
@@ -293,9 +376,13 @@ export default function HomeScreen() {
       }
 
       if (!data.session) {
-        setBusinessMessage(
-          'Business account created, but email confirmation is still required. The application details were saved; sign in after confirmation to upload the license image.',
-        );
+        setCelebration({
+          title: 'Application received!',
+          message:
+            'Confirm your email to continue. Your business details are saved; sign in afterward to upload your license image.',
+        });
+        setSignupVisible(false);
+        router.replace('/');
         setBusinessPassword('');
         return;
       }
@@ -327,7 +414,12 @@ export default function HomeScreen() {
         );
       }
 
-      setBusinessMessage('Business application submitted. Your license document was uploaded for review.');
+      setCelebration({
+        title: 'Congratulations!',
+        message: 'Your business application and license image are submitted for review.',
+      });
+      setSignupVisible(false);
+      router.replace('/');
       setBusinessPassword('');
     } catch (error) {
       setBusinessMessage(
@@ -335,6 +427,22 @@ export default function HomeScreen() {
       );
     } finally {
       setBusinessSubmitting(false);
+    }
+  }
+
+  async function signOut() {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      setHomeNotice('');
+      setHomeNoticeIsError(false);
+      router.replace('/');
+    } catch (error) {
+      setHomeNotice(
+        `Unable to log out. ${error instanceof Error ? error.message : 'Please try again.'}`,
+      );
+      setHomeNoticeIsError(true);
     }
   }
 
@@ -378,20 +486,33 @@ export default function HomeScreen() {
                 </Pressable>
               )}
               <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Open customer and business registration"
-                  onPress={() => {
-                    setSignupVisible(true);
-                    setSignupMode('customer');
-                  }}
-                  style={({ pressed }) => [
-                    styles.signupButton,
-                    pressed && styles.authPressed,
-                  ]}>
-                  <View style={styles.personHead} />
-                  <View style={styles.personShoulders} />
-                </Pressable>
+                {signedInEmail ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Log out${signedInEmail ? ` ${signedInEmail}` : ''}`}
+                    onPress={() => void signOut()}
+                    style={({ pressed }) => [
+                      styles.logoutHeaderButton,
+                      pressed && styles.authPressed,
+                    ]}>
+                    <Text style={styles.logoutHeaderButtonText}>Log out</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open customer and business registration"
+                    onPress={() => {
+                      setSignupVisible(true);
+                      setSignupMode('customer');
+                    }}
+                    style={({ pressed }) => [
+                      styles.signupButton,
+                      pressed && styles.authPressed,
+                    ]}>
+                    <View style={styles.personHead} />
+                    <View style={styles.personShoulders} />
+                  </Pressable>
+                )}
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -405,6 +526,19 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </View>
+
+          {homeNotice ? (
+            <View
+              accessibilityLiveRegion="polite"
+              style={[styles.homeNotice, homeNoticeIsError && styles.homeNoticeError]}>
+              <Text style={styles.homeNoticeText}>{homeNotice}</Text>
+              <Pressable
+                accessibilityLabel="Dismiss notification"
+                onPress={() => setHomeNotice('')}>
+                <Text style={styles.homeNoticeDismiss}>×</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {!isWide && (
             <View style={styles.searchBar}>
@@ -434,12 +568,14 @@ export default function HomeScreen() {
                 <Text style={styles.navLink}>Categories</Text>
                 <Text style={styles.navLink}>Offers</Text>
                 <Text style={styles.navLink}>My orders</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => router.push('/admin')}
-                  style={styles.dashboardNavButton}>
-                  <Text style={styles.dashboardNavText}>Dashboard</Text>
-                </Pressable>
+                {signedInRole === 'admin' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push('/admin')}
+                    style={styles.dashboardNavButton}>
+                    <Text style={styles.dashboardNavText}>Dashboard</Text>
+                  </Pressable>
+                ) : null}
               </View>
               <View style={styles.deliveryNote}>
                 <Text style={styles.deliveryIcon}>🚚</Text>
@@ -1032,14 +1168,15 @@ export default function HomeScreen() {
             <Text style={styles.signupTitle}>Welcome back</Text>
             <Text style={styles.signupSubtitle}>Sign in to your FreshCart account.</Text>
             <View style={styles.signupField}>
-              <Text style={styles.signupLabel}>Username</Text>
+              <Text style={styles.signupLabel}>Email address</Text>
               <TextInput
-                accessibilityLabel="Username"
+                accessibilityLabel="Email address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                keyboardType="email-address"
                 onChangeText={setLoginUsername}
                 onSubmitEditing={signIn}
-                placeholder="Enter your username"
+                placeholder="Enter your email"
                 placeholderTextColor="#8b958d"
                 returnKeyType="next"
                 style={styles.signupInput}
@@ -1067,14 +1204,53 @@ export default function HomeScreen() {
             ) : null}
             <Pressable
               accessibilityRole="button"
+              disabled={loginSubmitting}
               onPress={signIn}
               style={({ pressed }) => [styles.createAccountButton, pressed && styles.authPressed]}>
-              <Text style={styles.createAccountText}>Sign in</Text>
-              <Text style={styles.createAccountArrow}>→</Text>
+              <Text style={styles.createAccountText}>
+                {loginSubmitting ? 'Signing in...' : 'Sign in'}
+              </Text>
+              {!loginSubmitting ? <Text style={styles.createAccountArrow}>→</Text> : null}
             </Pressable>
             <Text style={styles.signupDisclaimer}>
-              Demo admin access: admin / admin
+              Use your Supabase Auth email and password. Admin accounts must have the admin role.
             </Text>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setCelebration(null)}
+        transparent
+        visible={celebration !== null}>
+        <View style={styles.celebrationBackdrop}>
+          <View
+            accessibilityRole="alert"
+            accessibilityViewIsModal
+            style={styles.celebrationCard}>
+            <View pointerEvents="none" style={styles.celebrationConfetti}>
+              <View style={[styles.confettiDot, styles.confettiDotOne]} />
+              <View style={[styles.confettiDot, styles.confettiDotTwo]} />
+              <View style={[styles.confettiDot, styles.confettiDotThree]} />
+              <View style={[styles.confettiDot, styles.confettiDotFour]} />
+              <View style={[styles.confettiDot, styles.confettiDotFive]} />
+              <View style={[styles.confettiDot, styles.confettiDotSix]} />
+            </View>
+            <View style={styles.celebrationIcon}>
+              <Text style={styles.celebrationCheck}>✓</Text>
+            </View>
+            <Text style={styles.celebrationTitle}>{celebration?.title}</Text>
+            <Text style={styles.celebrationMessage}>{celebration?.message}</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setCelebration(null)}
+              style={({ pressed }) => [
+                styles.celebrationButton,
+                pressed && styles.authPressed,
+              ]}>
+              <Text style={styles.celebrationButtonText}>Continue</Text>
+              <Text style={styles.celebrationButtonArrow}>→</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1192,6 +1368,167 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cfe2d1',
     backgroundColor: '#f0f8ee',
+  },
+  logoutHeaderButton: {
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 13,
+    borderRadius: 18,
+    backgroundColor: GREEN,
+  },
+  logoutHeaderButtonText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  homeNotice: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#cfe2d1',
+    borderRadius: 10,
+    backgroundColor: '#f0f8ee',
+  },
+  homeNoticeError: {
+    borderColor: '#f0d0ce',
+    backgroundColor: '#fff0ef',
+  },
+  homeNoticeText: {
+    flex: 1,
+    color: '#326643',
+    fontSize: 11,
+  },
+  homeNoticeDismiss: {
+    color: '#598366',
+    fontSize: 20,
+  },
+  celebrationBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 22,
+    backgroundColor: 'rgba(20,40,27,0.48)',
+  },
+  celebrationCard: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    paddingTop: 34,
+    paddingBottom: 28,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    shadowColor: '#173e27',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  celebrationConfetti: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  confettiDot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  confettiDotOne: {
+    top: 32,
+    left: '18%',
+    backgroundColor: '#ffcb63',
+  },
+  confettiDotTwo: {
+    top: 62,
+    left: '10%',
+    width: 6,
+    height: 12,
+    borderRadius: 3,
+    backgroundColor: '#75bd70',
+    transform: [{ rotate: '25deg' }],
+  },
+  confettiDotThree: {
+    top: 28,
+    right: '20%',
+    width: 7,
+    height: 12,
+    borderRadius: 3,
+    backgroundColor: '#ef9d88',
+    transform: [{ rotate: '-25deg' }],
+  },
+  confettiDotFour: {
+    top: 75,
+    right: '11%',
+    backgroundColor: '#8bb6e8',
+  },
+  confettiDotFive: {
+    top: 135,
+    left: '8%',
+    backgroundColor: '#f0b857',
+  },
+  confettiDotSix: {
+    top: 137,
+    right: '9%',
+    backgroundColor: '#73b982',
+  },
+  celebrationIcon: {
+    width: 68,
+    height: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 23,
+    backgroundColor: '#eaf7e9',
+  },
+  celebrationCheck: {
+    color: '#21823d',
+    fontSize: 38,
+    lineHeight: 44,
+    fontWeight: '700',
+  },
+  celebrationTitle: {
+    color: '#25392b',
+    fontSize: 21,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  celebrationMessage: {
+    maxWidth: 300,
+    color: '#748078',
+    fontSize: 12,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  celebrationButton: {
+    minHeight: 46,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 25,
+    borderRadius: 14,
+    backgroundColor: GREEN,
+  },
+  celebrationButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  celebrationButtonArrow: {
+    color: '#ffffff',
+    fontSize: 17,
   },
   personHead: {
     position: 'absolute',

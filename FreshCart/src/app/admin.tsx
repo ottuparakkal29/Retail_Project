@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Modal,
   Pressable,
@@ -13,9 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
+import { supabase } from '@/lib/supabase';
 
 type Partner = {
-  id: number;
+  id: string;
   company: string;
   email: string;
   phone: string;
@@ -26,87 +27,106 @@ type Partner = {
   color: string;
 };
 
-const startingPartners: Partner[] = [
-  {
-    id: 1,
-    company: 'Green Harvest Co.',
-    email: 'greenharvest@mail.com',
-    phone: '+91 98765 43210',
-    category: 'Manufacturer',
-    appliedOn: 'Nov 07, 2026 · 09:42 AM',
-    status: 'pending',
-    initials: 'GH',
-    color: '#e1f3df',
-  },
-  {
-    id: 2,
-    company: 'Malabar Dairy Co.',
-    email: 'partners@malabardairy.com',
-    phone: '+91 98470 12345',
-    category: 'Distributor',
-    appliedOn: 'Nov 07, 2026 · 08:16 AM',
-    status: 'pending',
-    initials: 'MD',
-    color: '#f8ead2',
-  },
-  {
-    id: 3,
-    company: 'Harvest & Hearth',
-    email: 'team@harvesthearth.com',
-    phone: '+91 98950 67890',
-    category: 'Retailer',
-    appliedOn: 'Nov 06, 2026 · 04:15 PM',
-    status: 'pending',
-    initials: 'HH',
-    color: '#f5e1dc',
-  },
-  {
-    id: 4,
-    company: 'Coastal Spice Works',
-    email: 'hello@coastalspice.com',
-    phone: '+91 94470 24680',
-    category: 'Wholesaler',
-    appliedOn: 'Nov 06, 2026 · 02:20 PM',
-    status: 'pending',
-    initials: 'CS',
-    color: '#f6edce',
-  },
-  {
-    id: 5,
-    company: 'Nature Foods Co.',
-    email: 'naturefoods@mail.com',
-    phone: '+91 97460 13579',
-    category: 'Manufacturer',
-    appliedOn: 'Nov 05, 2026 · 11:15 AM',
-    status: 'approved',
-    initials: 'NF',
-    color: '#e2e8fa',
-  },
-  {
-    id: 6,
-    company: 'Healthy Greens Inc.',
-    email: 'hello@healthygreens.com',
-    phone: '+91 95670 86420',
-    category: 'Distributor',
-    appliedOn: 'Nov 04, 2026 · 04:20 PM',
-    status: 'approved',
-    initials: 'HG',
-    color: '#e2f0df',
-  },
-];
+const avatarColors = ['#e1f3df', '#f8ead2', '#f5e1dc', '#f6edce', '#e2e8fa', '#e2f0df'];
 
 const partnerTypes = ['All types', 'Manufacturer', 'Retailer', 'Wholesaler', 'Distributor'] as const;
 
 export default function AdminScreen() {
   const isWide = useResponsiveBreakpoint(850);
-  const [partners, setPartners] = useState(startingPartners);
+  const { welcome } = useLocalSearchParams<{ welcome?: string }>();
+  const [partners, setPartners] = useState<Partner[]>([]);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<(typeof partnerTypes)[number]>('All types');
-  const [confirmDelete, setConfirmDelete] = useState<Partner | null>(null);
+  const [rejectPartnerTarget, setRejectPartnerTarget] = useState<Partner | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [notice, setNotice] = useState('');
+  const [noticeIsError, setNoticeIsError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [savingPartnerId, setSavingPartnerId] = useState<string | null>(null);
+  const [adminProfileId, setAdminProfileId] = useState<string | null>(null);
+  const [welcomeVisible, setWelcomeVisible] = useState(
+    () => welcome === 'true',
+  );
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const [manufacturerSectionY, setManufacturerSectionY] = useState(0);
   const dashboardScroll = useRef<ScrollViewInstance>(null);
+
+  const loadPartners = useCallback(async () => {
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      setLoading(true);
+      setPartners([]);
+      setAdminProfileId(null);
+      setNotice('');
+      setNoticeIsError(false);
+      if (userError) throw userError;
+      if (!userData.user) {
+        router.replace('/');
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('auth_user_id', userData.user.id)
+        .maybeSingle();
+      if (profileError) throw profileError;
+      if (profile?.role !== 'admin') {
+        router.replace('/');
+        return;
+      }
+      setAdminProfileId(profile.id);
+
+      const { data, error } = await supabase
+        .from('business_profiles')
+        .select(
+          'id, business_name, business_type, contact_email, contact_phone, created_at, approval_status',
+        )
+        .in('approval_status', ['pending', 'approved'])
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+
+      setPartners(
+        (data ?? []).map((business, index) => {
+          const company = String(business.business_name || 'Business');
+          const initials = company
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((word) => word[0])
+            .join('')
+            .toUpperCase();
+
+          return {
+            id: business.id,
+            company,
+            email: business.contact_email ?? '',
+            phone: business.contact_phone ?? '',
+            category: business.business_type ?? 'Other',
+            appliedOn: business.created_at
+              ? new Date(business.created_at).toLocaleString()
+              : '—',
+            status: business.approval_status === 'approved' ? 'approved' : 'pending',
+            initials: initials || 'B',
+            color: avatarColors[index % avatarColors.length],
+          };
+        }),
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : 'Unable to load business applications.',
+      );
+      setNoticeIsError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadPartners();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadPartners]);
 
   const filteredPartners = useMemo(
     () =>
@@ -128,20 +148,96 @@ export default function AdminScreen() {
     [filteredPartners],
   );
 
-  function approvePartner(partner: Partner) {
-    setPartners((current) =>
-      current.map((item) =>
-        item.id === partner.id ? { ...item, status: 'approved' } : item,
-      ),
+  if (!adminProfileId) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.accessGate}>
+          <Text style={styles.accessGateTitle}>
+            {loading ? 'Verifying admin access...' : 'Admin access required'}
+          </Text>
+          {!loading && notice ? <Text style={styles.accessGateMessage}>{notice}</Text> : null}
+          {!loading ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.replace('/')}
+              style={styles.accessGateButton}>
+              <Text style={styles.accessGateButtonText}>Back to storefront</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </SafeAreaView>
     );
-    setNotice(`${partner.company} has been approved.`);
   }
 
-  function deletePartner() {
-    if (!confirmDelete) return;
-    setPartners((current) => current.filter((item) => item.id !== confirmDelete.id));
-    setNotice(`${confirmDelete.company} has been removed.`);
-    setConfirmDelete(null);
+  async function approvePartner(partner: Partner) {
+    if (!adminProfileId || savingPartnerId) return;
+    setSavingPartnerId(partner.id);
+    setNotice('');
+    try {
+      const now = new Date().toISOString();
+      const { data: updated, error } = await supabase
+        .from('business_profiles')
+        .update({
+          approval_status: 'approved',
+          approved_by: adminProfileId,
+          approved_at: now,
+          rejection_reason: null,
+          updated_at: now,
+        })
+        .eq('id', partner.id)
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!updated) throw new Error('This business application was not found or cannot be updated.');
+
+      setPartners((current) =>
+        current.map((item) =>
+          item.id === partner.id ? { ...item, status: 'approved' } : item,
+        ),
+      );
+      setNotice(`${partner.company} has been approved.`);
+      setNoticeIsError(false);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to approve this business.');
+      setNoticeIsError(true);
+    } finally {
+      setSavingPartnerId(null);
+    }
+  }
+
+  async function rejectBusiness() {
+    const reason = rejectionReason.trim();
+    if (!rejectPartnerTarget || !reason || savingPartnerId) return;
+    setSavingPartnerId(rejectPartnerTarget.id);
+    setNotice('');
+    try {
+      const now = new Date().toISOString();
+      const { data: updated, error } = await supabase
+        .from('business_profiles')
+        .update({
+          approval_status: 'rejected',
+          approved_by: null,
+          approved_at: null,
+          rejection_reason: reason,
+          updated_at: now,
+        })
+        .eq('id', rejectPartnerTarget.id)
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!updated) throw new Error('This business application was not found or cannot be updated.');
+
+      setPartners((current) => current.filter((item) => item.id !== rejectPartnerTarget.id));
+      setNotice(`${rejectPartnerTarget.company} has been rejected.`);
+      setNoticeIsError(false);
+      setRejectPartnerTarget(null);
+      setRejectionReason('');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to reject this business.');
+      setNoticeIsError(true);
+    } finally {
+      setSavingPartnerId(null);
+    }
   }
 
   function navigateMobileSection(section: 'dashboard' | 'manufacturers') {
@@ -156,7 +252,11 @@ export default function AdminScreen() {
     if (!rows.length) {
       return (
         <View style={styles.emptyRow}>
-          <Text style={styles.emptyTitle}>No {type === 'pending' ? 'pending requests' : 'approved partners'} found</Text>
+          <Text style={styles.emptyTitle}>
+            {loading
+              ? 'Loading business applications...'
+              : `No ${type === 'pending' ? 'pending requests' : 'approved partners'} found`}
+          </Text>
           <Text style={styles.emptySubtitle}>Try another search or check back later.</Text>
         </View>
       );
@@ -192,22 +292,41 @@ export default function AdminScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Approve ${partner.company}`}
-              onPress={() => approvePartner(partner)}
-              style={({ pressed }) => [styles.approveButton, pressed && styles.pressed]}>
-              <Text style={styles.approveButtonText}>✓ <Text style={styles.actionLabel}>Approve</Text></Text>
+              disabled={savingPartnerId !== null}
+              onPress={() => void approvePartner(partner)}
+              style={({ pressed }) => [
+                styles.approveButton,
+                pressed && styles.pressed,
+                savingPartnerId === partner.id && styles.disabledButton,
+              ]}>
+              <Text style={styles.approveButtonText}>
+                ✓ <Text style={styles.actionLabel}>
+                  {savingPartnerId === partner.id ? 'Saving...' : 'Approve'}
+                </Text>
+              </Text>
             </Pressable>
           ) : (
             <View style={styles.approvedStatus}>
               <Text style={styles.approvedStatusText}>✓ <Text style={styles.actionLabel}>Approved</Text></Text>
             </View>
           )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${type === 'pending' ? 'Reject' : 'Delete'} ${partner.company}`}
-            onPress={() => setConfirmDelete(partner)}
-            style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}>
-            <Text style={styles.deleteButtonText}>× <Text style={styles.actionLabel}>{type === 'pending' ? 'Reject' : 'Delete'}</Text></Text>
-          </Pressable>
+          {type === 'pending' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Reject ${partner.company}`}
+              disabled={savingPartnerId !== null}
+              onPress={() => {
+                setRejectionReason('');
+                setRejectPartnerTarget(partner);
+              }}
+              style={({ pressed }) => [
+                styles.deleteButton,
+                pressed && styles.pressed,
+                savingPartnerId !== null && styles.disabledButton,
+              ]}>
+              <Text style={styles.deleteButtonText}>× <Text style={styles.actionLabel}>Reject</Text></Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     ));
@@ -357,7 +476,9 @@ export default function AdminScreen() {
             </View>
 
             {notice ? (
-              <View accessibilityLiveRegion="polite" style={styles.notice}>
+              <View
+                accessibilityLiveRegion="polite"
+                style={[styles.notice, noticeIsError && styles.noticeError]}>
                 <Text style={styles.noticeText}>{notice}</Text>
                 <Pressable accessibilityLabel="Dismiss notification" onPress={() => setNotice('')}>
                   <Text style={styles.noticeDismiss}>×</Text>
@@ -380,12 +501,12 @@ export default function AdminScreen() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Refresh partner list"
-                  onPress={() => {
-                    setQuery('');
-                    setTypeFilter('All types');
-                  }}
+                  disabled={loading}
+                  onPress={() => void loadPartners()}
                   style={styles.refreshButton}>
-                  <Text style={styles.refreshButtonText}>↻ <Text style={styles.actionLabel}>Refresh</Text></Text>
+                  <Text style={styles.refreshButtonText}>
+                    ↻ <Text style={styles.actionLabel}>{loading ? 'Loading...' : 'Refresh'}</Text>
+                  </Text>
                 </Pressable>
               </View>
             </View>
@@ -432,7 +553,7 @@ export default function AdminScreen() {
             </View>
 
             <Text style={styles.disclaimer}>
-              Sample partner data · Changes are temporary and reset when the app reloads.
+              Business applications are loaded from Supabase.
             </Text>
           </View>
         </ScrollView>
@@ -505,28 +626,84 @@ export default function AdminScreen() {
 
       <Modal
         animationType="fade"
-        onRequestClose={() => setConfirmDelete(null)}
+        onRequestClose={() => setRejectPartnerTarget(null)}
         transparent
-        visible={confirmDelete !== null}>
+        visible={rejectPartnerTarget !== null}>
         <View style={styles.modalBackdrop}>
           <View style={styles.confirmCard}>
             <View style={styles.confirmIcon}><Text style={styles.confirmIconText}>!</Text></View>
-            <Text style={styles.confirmTitle}>
-              {confirmDelete?.status === 'pending' ? 'Reject this request?' : 'Delete this partner?'}
-            </Text>
+            <Text style={styles.confirmTitle}>Reject this request?</Text>
             <Text style={styles.confirmMessage}>
-              {confirmDelete?.company} will be removed from this sample list.
+              {rejectPartnerTarget?.company} will be marked as rejected. Tell the business why its application was not approved.
             </Text>
+            <Text style={styles.rejectionReasonLabel}>Reason for rejection *</Text>
+            <TextInput
+              accessibilityLabel="Reason for rejecting this business"
+              editable={savingPartnerId === null}
+              multiline
+              onChangeText={setRejectionReason}
+              placeholder="Explain what needs to be corrected..."
+              placeholderTextColor="#8b958d"
+              style={styles.rejectionReasonInput}
+              textAlignVertical="top"
+              value={rejectionReason}
+            />
             <View style={styles.confirmActions}>
-              <Pressable onPress={() => setConfirmDelete(null)} style={styles.cancelButton}>
+              <Pressable
+                disabled={savingPartnerId !== null}
+                onPress={() => setRejectPartnerTarget(null)}
+                style={styles.cancelButton}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={deletePartner} style={styles.deleteConfirmButton}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={!rejectionReason.trim() || savingPartnerId !== null}
+                onPress={() => void rejectBusiness()}
+                style={[
+                  styles.deleteConfirmButton,
+                  (!rejectionReason.trim() || savingPartnerId !== null) && styles.disabledButton,
+                ]}>
                 <Text style={styles.deleteConfirmText}>
-                  {confirmDelete?.status === 'pending' ? 'Reject request' : 'Delete partner'}
+                  {savingPartnerId === rejectPartnerTarget?.id ? 'Rejecting...' : 'Reject request'}
                 </Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setWelcomeVisible(false)}
+        transparent
+        visible={welcomeVisible}>
+        <View style={styles.welcomeBackdrop}>
+          <View
+            accessibilityRole="alert"
+            accessibilityViewIsModal
+            style={styles.welcomeCard}>
+            <View pointerEvents="none" style={styles.welcomeConfetti}>
+              <View style={[styles.welcomeConfettiDot, styles.welcomeDotOne]} />
+              <View style={[styles.welcomeConfettiDot, styles.welcomeDotTwo]} />
+              <View style={[styles.welcomeConfettiDot, styles.welcomeDotThree]} />
+              <View style={[styles.welcomeConfettiDot, styles.welcomeDotFour]} />
+            </View>
+            <View style={styles.welcomeIcon}>
+              <Text style={styles.welcomeCheck}>✓</Text>
+            </View>
+            <Text style={styles.welcomeTitle}>Welcome back, Admin!</Text>
+            <Text style={styles.welcomeMessage}>
+              You’re signed in. Your business applications are ready for review.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setWelcomeVisible(false)}
+              style={({ pressed }) => [
+                styles.welcomeButton,
+                pressed && styles.pressed,
+              ]}>
+              <Text style={styles.welcomeButtonText}>Continue</Text>
+              <Text style={styles.welcomeButtonArrow}>→</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -564,6 +741,142 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#f4f7f4',
+  },
+  accessGate: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  accessGateTitle: {
+    color: '#293a2e',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  accessGateMessage: {
+    color: '#748078',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  accessGateButton: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    marginTop: 18,
+    borderRadius: 10,
+    backgroundColor: '#238f40',
+  },
+  accessGateButtonText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  welcomeBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 22,
+    backgroundColor: 'rgba(19,38,25,0.48)',
+  },
+  welcomeCard: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    paddingTop: 34,
+    paddingBottom: 28,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    shadowColor: '#173e27',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  welcomeConfetti: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  welcomeConfettiDot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  welcomeDotOne: {
+    top: 34,
+    left: '16%',
+    backgroundColor: '#ffcb63',
+  },
+  welcomeDotTwo: {
+    top: 38,
+    right: '16%',
+    backgroundColor: '#ef9d88',
+  },
+  welcomeDotThree: {
+    top: 108,
+    left: '9%',
+    backgroundColor: '#75bd70',
+  },
+  welcomeDotFour: {
+    top: 108,
+    right: '9%',
+    backgroundColor: '#8bb6e8',
+  },
+  welcomeIcon: {
+    width: 68,
+    height: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 23,
+    backgroundColor: '#eaf7e9',
+  },
+  welcomeCheck: {
+    color: '#21823d',
+    fontSize: 38,
+    lineHeight: 44,
+    fontWeight: '700',
+  },
+  welcomeTitle: {
+    color: '#293a2e',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  welcomeMessage: {
+    maxWidth: 300,
+    color: '#748078',
+    fontSize: 11,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  welcomeButton: {
+    minHeight: 46,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 25,
+    borderRadius: 14,
+    backgroundColor: '#238f40',
+  },
+  welcomeButtonText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  welcomeButtonArrow: {
+    color: '#ffffff',
+    fontSize: 17,
   },
   appFrame: {
     flex: 1,
@@ -1089,6 +1402,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#eef8ec',
   },
+  noticeError: {
+    borderColor: '#f0d0ce',
+    backgroundColor: '#fff0ef',
+  },
   noticeText: {
     color: '#326643',
     fontSize: 10,
@@ -1366,6 +1683,9 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: '#238f40',
   },
+  disabledButton: {
+    opacity: 0.55,
+  },
   approveButtonText: {
     color: '#ffffff',
     fontSize: 10,
@@ -1463,6 +1783,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 18,
     marginTop: 7,
+  },
+  rejectionReasonLabel: {
+    color: '#425146',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  rejectionReasonInput: {
+    minHeight: 100,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#e3e9e3',
+    borderRadius: 9,
+    color: '#324338',
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 11,
   },
   confirmActions: {
     flexDirection: 'row',

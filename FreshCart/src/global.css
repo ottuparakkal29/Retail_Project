@@ -16,9 +16,7 @@ select {
   font-family: Poppins_400Regular, Poppins, sans-serif;
 }
 
-input:focus,
-textarea:focus,
-select:focus {
+input[aria-label='Search products']:focus {
   outline: none !important;
   box-shadow: none !important;
 }

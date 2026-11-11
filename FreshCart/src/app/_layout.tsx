@@ -11,6 +11,7 @@ import {
   useFonts,
 } from '@expo-google-fonts/poppins';
 
+import '@/global.css';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { CartProvider } from '@/contexts/cart-context';

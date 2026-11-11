@@ -17,9 +17,25 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    never use a Supabase `service_role` or secret key here.
 
    Run the SQL files in `supabase/migrations` in filename order in the Supabase
-   SQL Editor. The business-registration migration enables private license
-   uploads and creates linked `profiles` and `business_profiles` records when
-   users register.
+   SQL Editor. The business-registration migration creates `business_profiles`,
+   enables private license uploads, and creates or backfills linked
+   `profiles` and `business_profiles` records for business accounts. The
+   business-review migration aligns the business table with its profile-linked
+   schema and enables admin-only review updates.
+
+   To enable an administrator, first create/sign up that account with Supabase
+   Auth, then assign its profile the `admin` role in the SQL Editor:
+
+   ```sql
+   update public.profiles
+   set role = 'admin'
+   where auth_user_id = (
+     select id from auth.users where email = 'admin@example.com'
+   );
+   ```
+
+   Replace the example email with the administrator account's email. The admin
+   panel requires signing in with that Supabase email and password.
 
 3. Start the app
 
