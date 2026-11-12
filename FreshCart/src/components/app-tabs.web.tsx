@@ -10,11 +10,14 @@ import { usePathname } from 'expo-router';
 import { Pressable, View, StyleSheet } from 'react-native';
 
 import { useCart } from '@/contexts/cart-context';
+import { useDashboardRole } from '@/hooks/use-dashboard-role';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 
 import { AppText as Text } from './app-text';
 
 export default function AppTabs() {
+  const dashboardRole = useDashboardRole();
+
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -26,9 +29,16 @@ export default function AppTabs() {
           <TabTrigger name="cart" href="/cart" asChild>
             <TabButton label="Cart">Cart</TabButton>
           </TabTrigger>
-          <TabTrigger name="admin" href="/admin" asChild>
-            <TabButton label="Dashboard">Dashboard</TabButton>
-          </TabTrigger>
+          {dashboardRole ? (
+            <TabTrigger
+              name="dashboard"
+              href={dashboardRole === 'admin' ? '/admin' : '/products'}
+              asChild>
+              <TabButton label={dashboardRole === 'admin' ? 'Dashboard' : 'Products'}>
+                {dashboardRole === 'admin' ? 'Dashboard' : 'Products'}
+              </TabButton>
+            </TabTrigger>
+          ) : null}
           <TabTrigger name="profile" href="/profile" asChild>
             <TabButton label="Profile">Profile</TabButton>
           </TabTrigger>
@@ -43,6 +53,7 @@ const tabIcons = {
   Home: '⌂',
   Cart: '🛍',
   Dashboard: '▦',
+  Products: '▣',
   Profile: '',
 } as const;
 

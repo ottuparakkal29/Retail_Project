@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -5,13 +6,103 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText as Text } from '@/components/app-text';
 import { useCart } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
+import { supabase } from '@/lib/supabase';
 
 const GREEN = '#138a39';
 const DARK_GREEN = '#07552c';
 
+type Account = {
+  email: string;
+  fullName: string;
+  phone: string;
+  role: string;
+};
+
 export default function ProfileScreen() {
   const isWide = useResponsiveBreakpoint(760);
   const { itemCount, subtotal } = useCart();
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountError, setAccountError] = useState('');
+  const [signOutError, setSignOutError] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAccount(userId: string | null, email: string) {
+      if (!userId) {
+        if (active) setAccount(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name, phone, role')
+          .eq('auth_user_id', userId)
+          .maybeSingle();
+        if (error) throw error;
+        if (active) {
+          setAccount({
+            email,
+            fullName: data?.full_name ?? '',
+            phone: data?.phone ?? '',
+            role: data?.role ?? 'customer',
+          });
+          setAccountError('');
+        }
+      } catch (error) {
+        if (active) {
+          setAccountError(
+            error instanceof Error ? error.message : 'Unable to load account details.',
+          );
+        }
+      }
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setTimeout(
+        () => void loadAccount(session?.user.id ?? null, session?.user.email ?? ''),
+        0,
+      );
+    });
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      void loadAccount(data.session?.user.id ?? null, data.session?.user.email ?? '');
+    }).catch((error: unknown) => {
+      if (active) {
+        setAccountError(
+          error instanceof Error ? error.message : 'Unable to verify your account.',
+        );
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function signOut() {
+    setSigningOut(true);
+    setSignOutError('');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      router.replace('/');
+    } catch (error) {
+      setSignOutError(error instanceof Error ? error.message : 'Unable to sign out.');
+      setSigningOut(false);
+    }
+  }
+
+  const displayName = account?.fullName || account?.email.split('@')[0] || 'shopper';
+  const roleLabel = account?.role
+    ? account.role.charAt(0).toUpperCase() + account.role.slice(1)
+    : 'Guest shopper';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -26,7 +117,7 @@ export default function ProfileScreen() {
               <Text style={styles.brandCaption}>YOUR ACCOUNT</Text>
             </View>
             <View style={styles.demoBadge}>
-              <Text style={styles.demoBadgeText}>GUEST</Text>
+              <Text style={styles.demoBadgeText}>{account ? roleLabel.toUpperCase() : 'GUEST'}</Text>
             </View>
           </View>
 
@@ -41,17 +132,38 @@ export default function ProfileScreen() {
               <View style={styles.profileCard}>
                 <View style={styles.profileTopRow}>
                   <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>G</Text>
+                    <Text style={styles.avatarText}>{displayName.slice(0, 1).toUpperCase()}</Text>
                   </View>
                   <View style={styles.profileIdentity}>
-                    <Text style={styles.profileName}>Welcome, shopper!</Text>
-                    <Text style={styles.profileEmail}>You are browsing as a guest</Text>
+                    <Text style={styles.profileName}>Welcome, {displayName}!</Text>
+                    <Text style={styles.profileEmail}>
+                      {account?.email ?? 'You are browsing as a guest'}
+                    </Text>
                   </View>
                 </View>
                 <View style={styles.profileDivider} />
                 <Text style={styles.profileHint}>
-                  Sign in when you are ready to keep your details and orders together.
+                  {account
+                    ? 'Your account details and FreshCart activity are shown here.'
+                    : 'Sign in when you are ready to keep your details and orders together.'}
                 </Text>
+                {accountError ? <Text style={styles.accountError}>{accountError}</Text> : null}
+                {signOutError ? <Text style={styles.accountError}>{signOutError}</Text> : null}
+                {account ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={signingOut}
+                    onPress={() => void signOut()}
+                    style={({ pressed }) => [
+                      styles.signOutButton,
+                      pressed && styles.pressed,
+                      signingOut && styles.disabledButton,
+                    ]}>
+                    <Text style={styles.signOutButtonText}>
+                      {signingOut ? 'Signing out…' : 'Sign out'}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               <View style={styles.card}>
@@ -62,9 +174,9 @@ export default function ProfileScreen() {
                   </View>
                   <View style={styles.cardIcon}><Text style={styles.cardIconText}>●</Text></View>
                 </View>
-                <DetailRow label="Account type" value="Guest shopper" icon="◉" />
-                <DetailRow label="Email address" value="Not added yet" icon="✉" />
-                <DetailRow label="Phone number" value="Not added yet" icon="☎" last />
+                <DetailRow label="Account type" value={roleLabel} icon="◉" />
+                <DetailRow label="Email address" value={account?.email ?? 'Not added yet'} icon="✉" />
+                <DetailRow label="Phone number" value={account?.phone || 'Not added yet'} icon="☎" last />
               </View>
 
               <View style={styles.card}>
@@ -317,6 +429,30 @@ const styles = StyleSheet.create({
     color: '#e1efe4',
     fontSize: 11,
     lineHeight: 17,
+  },
+  accountError: {
+    color: '#ffd0c7',
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 8,
+  },
+  signOutButton: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  signOutButtonText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   card: {
     paddingHorizontal: 16,

@@ -346,7 +346,6 @@ export default function AdminScreen() {
             </View>
             <View style={styles.sidebarMenu}>
               <SidebarItem icon="⌂" label="Dashboard" active onPress={() => router.replace('/admin')} />
-              <SidebarItem icon="▣" label="Partners" onPress={() => router.replace('/admin')} />
               <SidebarItem icon="▤" label="Analytics" onPress={() => router.push('/analytics')} />
             </View>
             <View style={styles.sidebarBottom}>
@@ -589,11 +588,6 @@ export default function AdminScreen() {
                 label="Dashboard"
                 active
                 onPress={() => navigateMobileSection('dashboard')}
-              />
-              <SidebarItem
-                icon="▣"
-                label="Partners"
-                onPress={() => navigateMobileSection('manufacturers')}
               />
               <SidebarItem
                 icon="▤"
