@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import {
   Modal,
@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
+import { supabase } from '@/lib/supabase';
 
 const salesByBusinessType = [
   { type: 'Manufacturer', orders: 148, productsSold: 1240, revenue: 186000, color: '#318b48' },
@@ -35,6 +36,49 @@ export default function AnalyticsScreen() {
   const isWide = useResponsiveBreakpoint(850);
   const [detailsWidth, setDetailsWidth] = useState(0);
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
+  const [adminAccess, setAdminAccess] = useState<'checking' | 'allowed' | 'denied'>('checking');
+  const [accessError, setAccessError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    async function verifyAdmin() {
+      try {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!userData.user) {
+          if (active) setAdminAccess('denied');
+          router.replace('/');
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('auth_user_id', userData.user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+        if (profile?.role !== 'admin') {
+          if (active) setAdminAccess('denied');
+          router.replace('/');
+          return;
+        }
+
+        if (active) setAdminAccess('allowed');
+      } catch (error) {
+        if (active) {
+          setAccessError(error instanceof Error ? error.message : 'Unable to verify admin access.');
+          setAdminAccess('denied');
+        }
+      }
+    }
+
+    void verifyAdmin();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const totals = salesByBusinessType.reduce(
     (result, partner) => ({
       orders: result.orders + partner.orders,
@@ -43,6 +87,23 @@ export default function AnalyticsScreen() {
     }),
     { orders: 0, productsSold: 0, revenue: 0 },
   );
+
+  if (adminAccess !== 'allowed') {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.accessGate}>
+          <Text style={styles.accessTitle}>
+            {adminAccess === 'checking' ? 'Verifying admin access…' : 'Admin access required'}
+          </Text>
+          {accessError ? <Text style={styles.accessMessage}>{accessError}</Text> : null}
+          <Pressable onPress={() => router.replace('/')} style={styles.accessButton}>
+            <Text style={styles.accessButtonText}>Back to storefront</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.appFrame}>
@@ -58,14 +119,20 @@ export default function AnalyticsScreen() {
               </View>
               <View style={styles.sidebarMenu}>
                 <SidebarItem label="Dashboard" icon="⌂" onPress={() => router.replace('/admin')} />
-                <SidebarItem label="Partners" icon="▣" onPress={() => router.replace('/admin')} />
                 <SidebarItem label="Analytics" icon="▤" active onPress={() => router.replace('/analytics')} />
               </View>
             </View>
-            <Pressable onPress={() => router.replace('/')} style={styles.backToStore}>
-              <Text style={styles.backIcon}>↪</Text>
-              <Text style={styles.backText}>Back to storefront</Text>
-            </Pressable>
+            <View style={styles.sidebarBottom}>
+              <View style={styles.sidebarPromo}>
+                <Text style={styles.promoBasket}>🛒</Text>
+                <Text style={styles.promoTitle}>FreshCart</Text>
+                <Text style={styles.promoSubtitle}>Good things grow together.</Text>
+              </View>
+              <Pressable onPress={() => router.replace('/')} style={styles.backToStore}>
+                <Text style={styles.backIcon}>↪</Text>
+                <Text style={styles.backText}>Back to storefront</Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
 
@@ -266,22 +333,21 @@ export default function AnalyticsScreen() {
                   router.replace('/admin');
                 }}
               />
-              <SidebarItem
-                label="Partners"
-                icon="▣"
-                onPress={() => {
-                  setMobileMenuVisible(false);
-                  router.replace('/admin');
-                }}
-              />
               <SidebarItem label="Analytics" icon="▤" active onPress={() => setMobileMenuVisible(false)} />
             </View>
-            <Pressable
-              onPress={() => router.replace('/')}
-              style={styles.backToStore}>
-              <Text style={styles.backIcon}>↪</Text>
-              <Text style={styles.backText}>Back to storefront</Text>
-            </Pressable>
+            <View style={styles.drawerBottom}>
+              <View style={styles.sidebarPromo}>
+                <Text style={styles.promoBasket}>🛒</Text>
+                <Text style={styles.promoTitle}>FreshCart</Text>
+                <Text style={styles.promoSubtitle}>Good things grow together.</Text>
+              </View>
+              <Pressable
+                onPress={() => router.replace('/')}
+                style={styles.backToStore}>
+                <Text style={styles.backIcon}>↪</Text>
+                <Text style={styles.backText}>Back to storefront</Text>
+              </Pressable>
+            </View>
           </View>
           <Pressable
             accessibilityLabel="Close navigation menu"
@@ -343,6 +409,36 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f4f7f4',
   },
+  accessGate: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  accessTitle: {
+    color: '#17331e',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  accessMessage: {
+    color: '#9b4033',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  accessButton: {
+    marginTop: 18,
+    paddingVertical: 11,
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    backgroundColor: '#138a39',
+  },
+  accessButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   appFrame: {
     flex: 1,
     flexDirection: 'row',
@@ -382,6 +478,7 @@ const styles = StyleSheet.create({
     color: '#176a35',
     fontSize: 17,
     fontWeight: '900',
+    letterSpacing: -0.5,
   },
   brandCaption: {
     color: '#7d8b7e',
@@ -391,7 +488,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   sidebarMenu: {
+    flex: 1,
     paddingTop: 17,
+  },
+  sidebarBottom: {
+    gap: 13,
+  },
+  sidebarPromo: {
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderRadius: 15,
+    backgroundColor: '#eff9e9',
+  },
+  promoBasket: {
+    fontSize: 28,
+  },
+  promoTitle: {
+    color: '#28713b',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  promoSubtitle: {
+    color: '#789078',
+    fontSize: 8,
+    marginTop: 3,
+  },
+  drawerBottom: {
+    gap: 13,
   },
   sidebarItem: {
     minHeight: 40,
@@ -409,6 +533,7 @@ const styles = StyleSheet.create({
     width: 20,
     color: '#526456',
     fontSize: 18,
+    fontWeight: '700',
     textAlign: 'center',
   },
   sidebarIconActive: {

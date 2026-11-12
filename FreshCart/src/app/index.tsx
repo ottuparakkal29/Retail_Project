@@ -16,6 +16,7 @@ import { AppText as Text } from '@/components/app-text';
 import { products } from '@/constants/products';
 import { useCart } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
+import { useDashboardRole } from '@/hooks/use-dashboard-role';
 import { supabase } from '@/lib/supabase';
 
 const GREEN = '#138a39';
@@ -130,12 +131,14 @@ export default function HomeScreen() {
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
-  const [signedInUserId, setSignedInUserId] = useState<string | null>(null);
-  const [signedInRole, setSignedInRole] = useState<string | null>(null);
+  const dashboardRole = useDashboardRole();
   const [celebration, setCelebration] = useState<{ title: string; message: string } | null>(null);
   const [homeNotice, setHomeNotice] = useState('');
   const [homeNoticeIsError, setHomeNoticeIsError] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [hoveredNavItem, setHoveredNavItem] = useState<string | null>(null);
+  const [keyboardFocusedNavItem, setKeyboardFocusedNavItem] = useState<string | null>(null);
+  const [activeNavItem, setActiveNavItem] = useState('Home');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -145,32 +148,12 @@ export default function HomeScreen() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSignedInEmail(session?.user.email ?? null);
-      setSignedInUserId(session?.user.id ?? null);
-      setSignedInRole(null);
     });
     return () => {
       clearInterval(timer);
       subscription.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    if (!signedInUserId) return;
-
-    let active = true;
-    void supabase
-      .from('profiles')
-      .select('role')
-      .eq('auth_user_id', signedInUserId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (active && !error) setSignedInRole(data?.role ?? null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [signedInUserId]);
 
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -430,21 +413,7 @@ export default function HomeScreen() {
     }
   }
 
-  async function signOut() {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-
-      setHomeNotice('');
-      setHomeNoticeIsError(false);
-      router.replace('/');
-    } catch (error) {
-      setHomeNotice(
-        `Unable to log out. ${error instanceof Error ? error.message : 'Please try again.'}`,
-      );
-      setHomeNoticeIsError(true);
-    }
-  }
+  const focusedNavItem = hoveredNavItem ?? keyboardFocusedNavItem ?? activeNavItem;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -486,18 +455,7 @@ export default function HomeScreen() {
                 </Pressable>
               )}
               <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
-                {signedInEmail ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Log out${signedInEmail ? ` ${signedInEmail}` : ''}`}
-                    onPress={() => void signOut()}
-                    style={({ pressed }) => [
-                      styles.logoutHeaderButton,
-                      pressed && styles.authPressed,
-                    ]}>
-                    <Text style={styles.logoutHeaderButtonText}>Log out</Text>
-                  </Pressable>
-                ) : (
+                {!signedInEmail ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Open customer and business registration"
@@ -512,7 +470,7 @@ export default function HomeScreen() {
                     <View style={styles.personHead} />
                     <View style={styles.personShoulders} />
                   </Pressable>
-                )}
+                ) : null}
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -564,16 +522,94 @@ export default function HomeScreen() {
                 <Text style={styles.chevron}>⌄</Text>
               </Pressable>
               <View style={styles.navLinks}>
-                <Text style={styles.navActive}>Home</Text>
-                <Text style={styles.navLink}>Categories</Text>
-                <Text style={styles.navLink}>Offers</Text>
-                <Text style={styles.navLink}>My orders</Text>
-                {signedInRole === 'admin' ? (
+                {(['Home', 'Categories', 'Offers', 'My orders'] as const).map((label) => {
+                  const focused = focusedNavItem === label;
+                  return (
+                    <Pressable
+                      key={label}
+                      accessibilityRole="button"
+                      onPress={() => setActiveNavItem(label)}
+                      onHoverIn={() => setHoveredNavItem(label)}
+                      onHoverOut={() =>
+                        setHoveredNavItem((current) => current === label ? null : current)
+                      }
+                      onFocus={() => setKeyboardFocusedNavItem(label)}
+                      onBlur={() =>
+                        setKeyboardFocusedNavItem((current) =>
+                          current === label ? null : current
+                        )
+                      }
+                      style={({ pressed }) => [
+                        styles.navItemButton,
+                        (pressed || focusedNavItem === label) && styles.navItemButtonFocused,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.navLink,
+                          focusedNavItem === label && styles.navLinkFocused,
+                        ]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                {dashboardRole === 'business' ? (
                   <Pressable
                     accessibilityRole="button"
-                    onPress={() => router.push('/admin')}
-                    style={styles.dashboardNavButton}>
-                    <Text style={styles.dashboardNavText}>Dashboard</Text>
+                    onPress={() => {
+                      setActiveNavItem('Products');
+                      router.push('/products');
+                    }}
+                    onHoverIn={() => setHoveredNavItem('Products')}
+                    onHoverOut={() =>
+                      setHoveredNavItem((current) => current === 'Products' ? null : current)
+                    }
+                    onFocus={() => setKeyboardFocusedNavItem('Products')}
+                    onBlur={() =>
+                      setKeyboardFocusedNavItem((current) =>
+                        current === 'Products' ? null : current
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.navItemButton,
+                      (pressed || focusedNavItem === 'Products') && styles.navItemButtonFocused,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.navLink,
+                        focusedNavItem === 'Products' && styles.navLinkFocused,
+                      ]}>
+                      Products
+                    </Text>
+                  </Pressable>
+                ) : dashboardRole === 'admin' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setActiveNavItem('Dashboard');
+                      router.push('/admin');
+                    }}
+                    onHoverIn={() => setHoveredNavItem('Dashboard')}
+                    onHoverOut={() =>
+                      setHoveredNavItem((current) => current === 'Dashboard' ? null : current)
+                    }
+                    onFocus={() => setKeyboardFocusedNavItem('Dashboard')}
+                    onBlur={() =>
+                      setKeyboardFocusedNavItem((current) =>
+                        current === 'Dashboard' ? null : current
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.navItemButton,
+                      (pressed || focusedNavItem === 'Dashboard') && styles.navItemButtonFocused,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.navLink,
+                        focusedNavItem === 'Dashboard' && styles.navLinkFocused,
+                      ]}>
+                      Dashboard
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -1369,19 +1405,6 @@ const styles = StyleSheet.create({
     borderColor: '#cfe2d1',
     backgroundColor: '#f0f8ee',
   },
-  logoutHeaderButton: {
-    minHeight: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 13,
-    borderRadius: 18,
-    backgroundColor: GREEN,
-  },
-  logoutHeaderButtonText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
   homeNotice: {
     minHeight: 40,
     flexDirection: 'row',
@@ -1629,22 +1652,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 25,
   },
-  dashboardNavButton: {
-    paddingVertical: 5,
+  navItemButton: {
+    paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: 8,
+    borderRadius: 9,
+  },
+  navItemButtonFocused: {
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
-  dashboardNavText: {
+  navLinkFocused: {
     color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  navActive: {
-    color: '#ffffff',
-    fontSize: 13,
     fontWeight: '800',
-    textDecorationLine: 'underline',
   },
   navLink: {
     color: '#eff9f0',

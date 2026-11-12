@@ -12,16 +12,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
 import { useCart } from '@/contexts/cart-context';
+import { useDashboardRole } from '@/hooks/use-dashboard-role';
 
 const tabIcons = {
   Home: '⌂',
   Cart: '🛍',
   Dashboard: '▦',
+  Products: '▣',
 } as const;
 
 type TabLabel = keyof typeof tabIcons | 'Profile';
 
 export default function AppTabs() {
+  const dashboardRole = useDashboardRole();
+
   return (
     <Tabs>
       <TabSlot style={styles.tabSlot} />
@@ -33,9 +37,16 @@ export default function AppTabs() {
           <TabTrigger name="cart" href="/cart" asChild>
             <TabButton label="Cart">Cart</TabButton>
           </TabTrigger>
-          <TabTrigger name="admin" href="/admin" asChild>
-            <TabButton label="Dashboard">Dashboard</TabButton>
-          </TabTrigger>
+          {dashboardRole ? (
+            <TabTrigger
+              name="dashboard"
+              href={dashboardRole === 'admin' ? '/admin' : '/products'}
+              asChild>
+              <TabButton label={dashboardRole === 'admin' ? 'Dashboard' : 'Products'}>
+                {dashboardRole === 'admin' ? 'Dashboard' : 'Products'}
+              </TabButton>
+            </TabTrigger>
+          ) : null}
           <TabTrigger name="profile" href="/profile" asChild>
             <TabButton label="Profile">Profile</TabButton>
           </TabTrigger>
