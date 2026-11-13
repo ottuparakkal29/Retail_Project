@@ -13,10 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
+import NotificationWrapper from '@/components/notification-wrapper';
 import { products } from '@/constants/products';
 import { useCart } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
-import { useDashboardRole } from '@/hooks/use-dashboard-role';
 import { supabase } from '@/lib/supabase';
 
 const GREEN = '#138a39';
@@ -103,6 +103,7 @@ export default function HomeScreen() {
   const [signupName, setSignupName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPhone, setSignupPhone] = useState('');
+  const [signupAddress, setSignupAddress] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupMessage, setSignupMessage] = useState('');
   const [signupMessageType, setSignupMessageType] = useState<'error' | 'success'>('error');
@@ -131,14 +132,10 @@ export default function HomeScreen() {
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
-  const dashboardRole = useDashboardRole();
   const [celebration, setCelebration] = useState<{ title: string; message: string } | null>(null);
   const [homeNotice, setHomeNotice] = useState('');
-  const [homeNoticeIsError, setHomeNoticeIsError] = useState(false);
+  const [homeNoticeIsError] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
-  const [hoveredNavItem, setHoveredNavItem] = useState<string | null>(null);
-  const [keyboardFocusedNavItem, setKeyboardFocusedNavItem] = useState<string | null>(null);
-  const [activeNavItem, setActiveNavItem] = useState('Home');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -218,6 +215,7 @@ export default function HomeScreen() {
     const fullName = signupName.trim();
     const email = signupEmail.trim().toLowerCase();
     const phone = signupPhone.trim();
+    const address = signupAddress.trim();
     const phoneDigits = phone.replace(/\D/g, '');
 
     setSignupMessageType('error');
@@ -244,6 +242,7 @@ export default function HomeScreen() {
           data: {
             full_name: fullName,
             phone,
+            address,
           },
         },
       });
@@ -370,6 +369,37 @@ export default function HomeScreen() {
         return;
       }
 
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', data.user.id)
+        .maybeSingle();
+      if (profileError) throw profileError;
+      if (!profile) {
+        throw new Error('Your account was created, but its profile is not ready yet. Please sign in and try again.');
+      }
+
+      const { error: businessProfileError } = await supabase
+        .from('business_profiles')
+        .upsert(
+          {
+            user_id: profile.id,
+            business_name: businessName.trim(),
+            business_type: businessType,
+            contact_name: businessContact.trim(),
+            contact_email: email,
+            contact_phone: businessPhone.trim(),
+            license_number: businessLicenseNumber.trim(),
+            gstin: businessGstin.trim() || null,
+            fssai_number: businessFssai.trim() || null,
+            district: businessDistrict,
+            address: businessAddress.trim(),
+            approval_status: 'pending',
+          },
+          { onConflict: 'user_id' },
+        );
+      if (businessProfileError) throw businessProfileError;
+
       const safeFileName = licenseImage.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const documentPath = `${data.user.id}/${Date.now()}-${safeFileName}`;
       const fileResponse = await fetch(licenseImage.uri);
@@ -413,8 +443,6 @@ export default function HomeScreen() {
     }
   }
 
-  const focusedNavItem = hoveredNavItem ?? keyboardFocusedNavItem ?? activeNavItem;
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -455,7 +483,7 @@ export default function HomeScreen() {
                 </Pressable>
               )}
               <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
-                {!signedInEmail ? (
+                {signupVisible || loginVisible ? null : !signedInEmail ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Open customer and business registration"
@@ -470,7 +498,9 @@ export default function HomeScreen() {
                     <View style={styles.personHead} />
                     <View style={styles.personShoulders} />
                   </Pressable>
-                ) : null}
+                ) : (
+                  <NotificationWrapper />
+                )}
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -510,112 +540,6 @@ export default function HomeScreen() {
               />
               <View style={styles.searchIcon}>
                 <Text style={styles.searchIconText}>⌕</Text>
-              </View>
-            </View>
-          )}
-
-          {isWide && (
-            <View style={styles.navigation}>
-              <Pressable style={styles.allCategories}>
-                <Text style={styles.menuIcon}>☰</Text>
-                <Text style={styles.allCategoriesText}>All categories</Text>
-                <Text style={styles.chevron}>⌄</Text>
-              </Pressable>
-              <View style={styles.navLinks}>
-                {(['Home', 'Categories', 'Offers', 'My orders'] as const).map((label) => {
-                  const focused = focusedNavItem === label;
-                  return (
-                    <Pressable
-                      key={label}
-                      accessibilityRole="button"
-                      onPress={() => setActiveNavItem(label)}
-                      onHoverIn={() => setHoveredNavItem(label)}
-                      onHoverOut={() =>
-                        setHoveredNavItem((current) => current === label ? null : current)
-                      }
-                      onFocus={() => setKeyboardFocusedNavItem(label)}
-                      onBlur={() =>
-                        setKeyboardFocusedNavItem((current) =>
-                          current === label ? null : current
-                        )
-                      }
-                      style={({ pressed }) => [
-                        styles.navItemButton,
-                        (pressed || focusedNavItem === label) && styles.navItemButtonFocused,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.navLink,
-                          focusedNavItem === label && styles.navLinkFocused,
-                        ]}>
-                        {label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-                {dashboardRole === 'business' ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      setActiveNavItem('Products');
-                      router.push('/products');
-                    }}
-                    onHoverIn={() => setHoveredNavItem('Products')}
-                    onHoverOut={() =>
-                      setHoveredNavItem((current) => current === 'Products' ? null : current)
-                    }
-                    onFocus={() => setKeyboardFocusedNavItem('Products')}
-                    onBlur={() =>
-                      setKeyboardFocusedNavItem((current) =>
-                        current === 'Products' ? null : current
-                      )
-                    }
-                    style={({ pressed }) => [
-                      styles.navItemButton,
-                      (pressed || focusedNavItem === 'Products') && styles.navItemButtonFocused,
-                    ]}>
-                    <Text
-                      style={[
-                        styles.navLink,
-                        focusedNavItem === 'Products' && styles.navLinkFocused,
-                      ]}>
-                      Products
-                    </Text>
-                  </Pressable>
-                ) : dashboardRole === 'admin' ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      setActiveNavItem('Dashboard');
-                      router.push('/admin');
-                    }}
-                    onHoverIn={() => setHoveredNavItem('Dashboard')}
-                    onHoverOut={() =>
-                      setHoveredNavItem((current) => current === 'Dashboard' ? null : current)
-                    }
-                    onFocus={() => setKeyboardFocusedNavItem('Dashboard')}
-                    onBlur={() =>
-                      setKeyboardFocusedNavItem((current) =>
-                        current === 'Dashboard' ? null : current
-                      )
-                    }
-                    style={({ pressed }) => [
-                      styles.navItemButton,
-                      (pressed || focusedNavItem === 'Dashboard') && styles.navItemButtonFocused,
-                    ]}>
-                    <Text
-                      style={[
-                        styles.navLink,
-                        focusedNavItem === 'Dashboard' && styles.navLinkFocused,
-                      ]}>
-                      Dashboard
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              <View style={styles.deliveryNote}>
-                <Text style={styles.deliveryIcon}>🚚</Text>
-                <Text style={styles.deliveryText}>Free delivery on orders above ₹499</Text>
               </View>
             </View>
           )}
@@ -896,6 +820,19 @@ export default function HomeScreen() {
                       placeholderTextColor="#8b958d"
                       style={styles.signupInput}
                       value={signupPhone}
+                    />
+                  </View>
+                  <View style={styles.signupField}>
+                    <Text style={styles.signupLabel}>Delivery address</Text>
+                    <TextInput
+                      accessibilityLabel="Delivery address"
+                      autoComplete="street-address"
+                      multiline
+                      onChangeText={setSignupAddress}
+                      placeholder="Street, town, and PIN code"
+                      placeholderTextColor="#8b958d"
+                      style={[styles.signupInput, styles.addressInput]}
+                      value={signupAddress}
                     />
                   </View>
                   <View style={styles.signupField}>
@@ -1620,70 +1557,6 @@ const styles = StyleSheet.create({
   cartBadgeText: {
     color: '#ffffff',
     fontSize: 10,
-    fontWeight: '700',
-  },
-  navigation: {
-    height: 44,
-    marginHorizontal: -20,
-    paddingHorizontal: 24,
-    backgroundColor: GREEN,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 20,
-    marginBottom: 10,
-  },
-  allCategories: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  menuIcon: {
-    color: '#ffffff',
-    fontSize: 17,
-  },
-  allCategoriesText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  navLinks: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 25,
-  },
-  navItemButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 9,
-  },
-  navItemButtonFocused: {
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  navLinkFocused: {
-    color: '#ffffff',
-    fontWeight: '800',
-  },
-  navLink: {
-    color: '#eff9f0',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  deliveryNote: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#dff3bd',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  deliveryIcon: {
-    fontSize: 13,
-  },
-  deliveryText: {
-    color: DARK_GREEN,
-    fontSize: 11,
     fontWeight: '700',
   },
   hero: {

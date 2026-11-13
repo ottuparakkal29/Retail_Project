@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   Tabs,
   TabList,
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText as Text } from '@/components/app-text';
 import { useCart } from '@/contexts/cart-context';
 import { useDashboardRole } from '@/hooks/use-dashboard-role';
+import { supabase } from '@/lib/supabase';
 
 const tabIcons = {
   Home: '⌂',
@@ -25,6 +27,28 @@ type TabLabel = keyof typeof tabIcons | 'Profile';
 
 export default function AppTabs() {
   const dashboardRole = useDashboardRole();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session?.user));
+    });
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      if (active) setIsAuthenticated(Boolean(data.session?.user));
+    }).catch((error: unknown) => {
+      if (active) console.error('Unable to verify navigation authentication.', error);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   return (
     <Tabs>
@@ -47,9 +71,11 @@ export default function AppTabs() {
               </TabButton>
             </TabTrigger>
           ) : null}
-          <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton label="Profile">Profile</TabButton>
-          </TabTrigger>
+          {isAuthenticated ? (
+            <TabTrigger name="profile" href="/profile" asChild>
+              <TabButton label="Profile">Profile</TabButton>
+            </TabTrigger>
+          ) : null}
           <TabTrigger name="analytics" href="/analytics" style={styles.hiddenTrigger} />
         </CustomTabList>
       </TabList>
