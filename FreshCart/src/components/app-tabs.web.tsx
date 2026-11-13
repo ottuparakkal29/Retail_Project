@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   Tabs,
   TabList,
@@ -6,21 +7,51 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { usePathname } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { Pressable, View, StyleSheet } from 'react-native';
 
+import { AppText as Text } from '@/components/app-text';
+import { supabase } from '@/lib/supabase';
 import { useCart } from '@/contexts/cart-context';
 import { useDashboardRole } from '@/hooks/use-dashboard-role';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 
-import { AppText as Text } from './app-text';
+type NavPath = '/' | '/cart' | '/profile' | '/products' | '/admin';
 
 export default function AppTabs() {
   const dashboardRole = useDashboardRole();
+  const isDesktop = useResponsiveBreakpoint(760);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session?.user));
+    });
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      if (active) setIsAuthenticated(Boolean(data.session?.user));
+    }).catch((error: unknown) => {
+      if (active) console.error('Unable to verify navigation authentication.', error);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   return (
     <Tabs>
-      <TabSlot style={{ height: '100%' }} />
+      <View style={styles.appShell}>
+        {isDesktop ? (
+          <DesktopNavigation isAuthenticated={isAuthenticated} dashboardRole={dashboardRole} />
+        ) : null}
+        <TabSlot style={styles.tabSlot} />
+      </View>
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="home" href="/" asChild>
@@ -39,13 +70,89 @@ export default function AppTabs() {
               </TabButton>
             </TabTrigger>
           ) : null}
-          <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton label="Profile">Profile</TabButton>
-          </TabTrigger>
+          {isAuthenticated ? (
+            <TabTrigger name="profile" href="/profile" asChild>
+              <TabButton label="Profile">Profile</TabButton>
+            </TabTrigger>
+          ) : null}
           <TabTrigger name="analytics" href="/analytics" style={styles.hiddenTrigger} />
         </CustomTabList>
       </TabList>
     </Tabs>
+  );
+}
+
+function DesktopNavigation({
+  dashboardRole,
+  isAuthenticated,
+}: {
+  dashboardRole: ReturnType<typeof useDashboardRole>;
+  isAuthenticated: boolean;
+}) {
+  const pathname = usePathname();
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [focusedItem, setFocusedItem] = useState<string | null>(null);
+  const items: { label: string; path: NavPath }[] = [
+    { label: 'Home', path: '/' },
+    { label: 'Categories', path: '/' },
+    { label: 'Offers', path: '/' },
+    { label: 'Cart', path: '/cart' },
+  ];
+  if (isAuthenticated) items.push({ label: 'Profile', path: '/profile' });
+  if (dashboardRole === 'business') {
+    items.push({ label: 'Business Studio', path: '/products' });
+  } else if (dashboardRole === 'admin') {
+    items.push({ label: 'Dashboard', path: '/admin' });
+  }
+
+  function isActive(label: string, path: string) {
+    if (path === '/') return label === 'Home' && pathname === '/';
+    if (path === '/admin') return pathname === '/admin' || pathname === '/analytics';
+    return pathname === path || pathname.startsWith(`${path}/`);
+  }
+
+  return (
+    <View style={styles.desktopNavigation}>
+      <View style={styles.desktopNavigationInner}>
+        <View style={styles.desktopNavLinks}>
+          {items.map(({ label, path }) => {
+            const active = isActive(label, path);
+            const hovered = hoveredItem === label || focusedItem === label;
+            return (
+              <Pressable
+                key={label}
+                accessibilityRole="link"
+                accessibilityState={{ selected: active }}
+                onPress={() => router.push(path)}
+                onHoverIn={() => setHoveredItem(label)}
+                onHoverOut={() =>
+                  setHoveredItem((current) => current === label ? null : current)
+                }
+                onFocus={() => setFocusedItem(label)}
+                onBlur={() =>
+                  setFocusedItem((current) => current === label ? null : current)
+                }
+                style={({ pressed }) => [
+                  styles.desktopNavItem,
+                  active && styles.desktopNavItemActive,
+                  hovered && !active && styles.desktopNavItemHovered,
+                  pressed && styles.pressed,
+                ]}>
+                <Text
+                  style={[
+                    styles.desktopNavText,
+                    active && styles.desktopNavTextActive,
+                    hovered && !active && styles.desktopNavTextHovered,
+                  ]}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.deliveryNote}>🚚 Free delivery on orders above ₹499</Text>
+      </View>
+    </View>
   );
 }
 
@@ -107,6 +214,65 @@ export function CustomTabList(props: TabListProps) {
 }
 
 const styles = StyleSheet.create({
+  appShell: {
+    flex: 1,
+  },
+  tabSlot: {
+    flex: 1,
+  },
+  desktopNavigation: {
+    width: '100%',
+    minHeight: 54,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8eee8',
+    backgroundColor: '#ffffff',
+  },
+  desktopNavigationInner: {
+    width: '100%',
+    maxWidth: 1320,
+    minHeight: 54,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 18,
+  },
+  desktopNavLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  desktopNavItem: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  desktopNavItemActive: {
+    backgroundColor: '#eaf5eb',
+  },
+  desktopNavItemHovered: {
+    backgroundColor: '#f4f8f3',
+  },
+  desktopNavText: {
+    color: '#59685c',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  desktopNavTextActive: {
+    color: '#138a39',
+    fontWeight: '800',
+  },
+  desktopNavTextHovered: {
+    color: '#07552c',
+  },
+  deliveryNote: {
+    color: '#607464',
+    fontSize: 10,
+    fontWeight: '600',
+  },
   hiddenTrigger: {
     display: 'none',
   },

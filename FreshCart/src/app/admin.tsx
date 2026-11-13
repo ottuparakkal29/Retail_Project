@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Image } from 'expo-image';
 import {
   Modal,
   Pressable,
@@ -25,7 +26,27 @@ type Partner = {
   status: 'pending' | 'approved';
   initials: string;
   color: string;
+  contactName: string;
+  gstin: string;
+  licenseNumber: string;
+  fssaiNumber: string;
+  district: string;
+  address: string;
+  licenseDocumentPath: string | null;
 };
+
+type BusinessNotificationRecord = {
+  business_profile_id: string;
+};
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = error.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
 
 const avatarColors = ['#e1f3df', '#f8ead2', '#f5e1dc', '#f6edce', '#e2e8fa', '#e2f0df'];
 
@@ -35,10 +56,21 @@ export default function AdminScreen() {
   const isWide = useResponsiveBreakpoint(850);
   const { welcome } = useLocalSearchParams<{ welcome?: string }>();
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [informedPartnerIds, setInformedPartnerIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<(typeof partnerTypes)[number]>('All types');
   const [rejectPartnerTarget, setRejectPartnerTarget] = useState<Partner | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [approvePartnerTarget, setApprovePartnerTarget] = useState<Partner | null>(null);
+  const [manualNotificationTarget, setManualNotificationTarget] = useState<Partner | null>(null);
+  const [manualNotificationMessage, setManualNotificationMessage] = useState('');
+  const [detailsPartner, setDetailsPartner] = useState<Partner | null>(null);
+  const [licenseImageUrl, setLicenseImageUrl] = useState<string | null>(null);
+  const [licensePreviewError, setLicensePreviewError] = useState('');
+  const [licensePreviewLoading, setLicensePreviewLoading] = useState(false);
+  const [licenseZoomVisible, setLicenseZoomVisible] = useState(false);
   const [notice, setNotice] = useState('');
   const [noticeIsError, setNoticeIsError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -56,6 +88,7 @@ export default function AdminScreen() {
       const { data: userData, error: userError } = await supabase.auth.getUser();
       setLoading(true);
       setPartners([]);
+      setInformedPartnerIds(new Set());
       setAdminProfileId(null);
       setNotice('');
       setNoticeIsError(false);
@@ -80,7 +113,7 @@ export default function AdminScreen() {
       const { data, error } = await supabase
         .from('business_profiles')
         .select(
-          'id, business_name, business_type, contact_email, contact_phone, created_at, approval_status',
+          'id, business_name, business_type, contact_name, contact_email, contact_phone, license_number, gstin, fssai_number, district, address, license_document_path, created_at, approval_status',
         )
         .in('approval_status', ['pending', 'approved'])
         .order('created_at', { ascending: false });
@@ -108,8 +141,33 @@ export default function AdminScreen() {
             status: business.approval_status === 'approved' ? 'approved' : 'pending',
             initials: initials || 'B',
             color: avatarColors[index % avatarColors.length],
+            contactName: business.contact_name ?? '',
+            gstin: business.gstin ?? '',
+            licenseNumber: business.license_number ?? '',
+            fssaiNumber: business.fssai_number ?? '',
+            district: business.district ?? '',
+            address: business.address ?? '',
+            licenseDocumentPath: business.license_document_path ?? null,
           };
         }),
+      );
+
+      const { data: sentMessages, error: sentMessagesError } = await supabase.rpc(
+        'admin_list_business_notifications',
+      );
+      if (sentMessagesError) {
+        setNotice(
+          `Business applications loaded, but the informed-business list could not be loaded: ${getErrorMessage(sentMessagesError, 'Unknown error')}`,
+        );
+        setNoticeIsError(true);
+        return;
+      }
+      setInformedPartnerIds(
+        new Set(
+          (sentMessages ?? []).map(
+            (message: BusinessNotificationRecord) => message.business_profile_id,
+          ),
+        ),
       );
     } catch (error) {
       setNotice(
@@ -140,8 +198,20 @@ export default function AdminScreen() {
     [partners, query, typeFilter],
   );
   const pending = useMemo(
-    () => filteredPartners.filter((partner) => partner.status === 'pending'),
-    [filteredPartners],
+    () =>
+      filteredPartners.filter(
+        (partner) =>
+          partner.status === 'pending' && !informedPartnerIds.has(partner.id),
+      ),
+    [filteredPartners, informedPartnerIds],
+  );
+  const informedPending = useMemo(
+    () =>
+      filteredPartners.filter(
+        (partner) =>
+          partner.status === 'pending' && informedPartnerIds.has(partner.id),
+      ),
+    [filteredPartners, informedPartnerIds],
   );
   const approved = useMemo(
     () => filteredPartners.filter((partner) => partner.status === 'approved'),
@@ -174,21 +244,11 @@ export default function AdminScreen() {
     setSavingPartnerId(partner.id);
     setNotice('');
     try {
-      const now = new Date().toISOString();
-      const { data: updated, error } = await supabase
-        .from('business_profiles')
-        .update({
-          approval_status: 'approved',
-          approved_by: adminProfileId,
-          approved_at: now,
-          rejection_reason: null,
-          updated_at: now,
-        })
-        .eq('id', partner.id)
-        .select('id')
-        .maybeSingle();
+      const { error } = await supabase.rpc('admin_review_business', {
+        p_business_id: partner.id,
+        p_decision: 'approved',
+      });
       if (error) throw error;
-      if (!updated) throw new Error('This business application was not found or cannot be updated.');
 
       setPartners((current) =>
         current.map((item) =>
@@ -197,6 +257,7 @@ export default function AdminScreen() {
       );
       setNotice(`${partner.company} has been approved.`);
       setNoticeIsError(false);
+      setApprovePartnerTarget(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Unable to approve this business.');
       setNoticeIsError(true);
@@ -211,21 +272,12 @@ export default function AdminScreen() {
     setSavingPartnerId(rejectPartnerTarget.id);
     setNotice('');
     try {
-      const now = new Date().toISOString();
-      const { data: updated, error } = await supabase
-        .from('business_profiles')
-        .update({
-          approval_status: 'rejected',
-          approved_by: null,
-          approved_at: null,
-          rejection_reason: reason,
-          updated_at: now,
-        })
-        .eq('id', rejectPartnerTarget.id)
-        .select('id')
-        .maybeSingle();
+      const { error } = await supabase.rpc('admin_review_business', {
+        p_business_id: rejectPartnerTarget.id,
+        p_decision: 'rejected',
+        p_message: reason,
+      });
       if (error) throw error;
-      if (!updated) throw new Error('This business application was not found or cannot be updated.');
 
       setPartners((current) => current.filter((item) => item.id !== rejectPartnerTarget.id));
       setNotice(`${rejectPartnerTarget.company} has been rejected.`);
@@ -237,6 +289,54 @@ export default function AdminScreen() {
       setNoticeIsError(true);
     } finally {
       setSavingPartnerId(null);
+    }
+  }
+
+  async function sendManualNotification() {
+    const message = manualNotificationMessage.trim();
+    if (!adminProfileId || !manualNotificationTarget || !message || savingPartnerId) return;
+
+    setSavingPartnerId(manualNotificationTarget.id);
+    setNotice('');
+    try {
+      const { error } = await supabase.rpc('admin_send_business_notification', {
+        p_business_id: manualNotificationTarget.id,
+        p_message: message,
+      });
+      if (error) throw error;
+
+      setNotice(`Information sent to ${manualNotificationTarget.company}.`);
+      setNoticeIsError(false);
+      setInformedPartnerIds((current) => new Set(current).add(manualNotificationTarget.id));
+      setManualNotificationTarget(null);
+      setManualNotificationMessage('');
+    } catch (error) {
+      setNotice(getErrorMessage(error, 'Unable to send this message.'));
+      setNoticeIsError(true);
+    } finally {
+      setSavingPartnerId(null);
+    }
+  }
+
+  async function openPartnerDetails(partner: Partner) {
+    setDetailsPartner(partner);
+    setLicenseImageUrl(null);
+    setLicensePreviewError('');
+    setLicensePreviewLoading(Boolean(partner.licenseDocumentPath));
+    if (!partner.licenseDocumentPath) return;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('business-licenses')
+        .createSignedUrl(partner.licenseDocumentPath, 600);
+      if (error) throw error;
+      setLicenseImageUrl(data.signedUrl);
+    } catch (error) {
+      setLicensePreviewError(
+        error instanceof Error ? error.message : 'Unable to load the license image.',
+      );
+    } finally {
+      setLicensePreviewLoading(false);
     }
   }
 
@@ -288,12 +388,34 @@ export default function AdminScreen() {
         </View>
         <Text numberOfLines={1} style={[styles.dateCell, !isWide && styles.mobileDateCell]}>{partner.appliedOn}</Text>
         <View style={[styles.actionCell, !isWide && styles.mobileActionCell]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`View details for ${partner.company}`}
+            onPress={() => void openPartnerDetails(partner)}
+            style={styles.detailsButton}>
+            <Text style={styles.detailsButtonText}>Details</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Send an information message to ${partner.company}`}
+            disabled={savingPartnerId !== null}
+            onPress={() => {
+              setManualNotificationMessage('');
+              setManualNotificationTarget(partner);
+            }}
+            style={({ pressed }) => [
+              styles.informButton,
+              pressed && styles.pressed,
+              savingPartnerId !== null && styles.disabledButton,
+            ]}>
+            <Text style={styles.informButtonText}>✉ <Text style={styles.actionLabel}>Inform</Text></Text>
+          </Pressable>
           {type === 'pending' ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Approve ${partner.company}`}
               disabled={savingPartnerId !== null}
-              onPress={() => void approvePartner(partner)}
+              onPress={() => setApprovePartnerTarget(partner)}
               style={({ pressed }) => [
                 styles.approveButton,
                 pressed && styles.pressed,
@@ -425,7 +547,9 @@ export default function AdminScreen() {
               <View style={styles.categoryTabActive}>
                 <Text style={styles.categoryTabIcon}>▣</Text>
                 <Text style={styles.categoryTabActiveText}>Partners</Text>
-                <Text style={styles.categoryTabCount}>{pending.length + approved.length}</Text>
+                <Text style={styles.categoryTabCount}>
+                  {pending.length + informedPending.length + approved.length}
+                </Text>
               </View>
               <View style={[styles.searchBox, !isWide && styles.mobileSearchBox]}>
                 <Text style={styles.searchIcon}>⌕</Text>
@@ -468,8 +592,9 @@ export default function AdminScreen() {
               </ScrollView>
               {typeFilter !== 'All types' ? (
                 <Text style={styles.partnerFilterResult}>
-                  Showing {pending.length + approved.length} {typeFilter.toLowerCase()}
-                  {pending.length + approved.length === 1 ? '' : 's'}
+                  Showing {pending.length + informedPending.length + approved.length}{' '}
+                  {typeFilter.toLowerCase()}
+                  {pending.length + informedPending.length + approved.length === 1 ? '' : 's'}
                 </Text>
               ) : null}
             </View>
@@ -491,7 +616,7 @@ export default function AdminScreen() {
               <View style={styles.sectionIconPending}><Text style={styles.sectionIconText}>◷</Text></View>
               <View style={styles.sectionTitleBlock}>
                 <Text style={styles.sectionTitle}>Pending requests</Text>
-                <Text style={styles.sectionSubtitle}>Review and approve new partner applications.</Text>
+                <Text style={styles.sectionSubtitle}>Review new applications that have not been informed.</Text>
               </View>
               <View style={styles.sectionHeaderActions}>
                 <View style={styles.pendingCount}>
@@ -523,6 +648,34 @@ export default function AdminScreen() {
                 </View>
               ) : null}
               {renderTableRows(pending, 'pending')}
+            </View>
+
+            <View style={[styles.sectionHeader, styles.informedSectionHeader]}>
+              <View style={styles.sectionIconInformed}><Text style={styles.sectionIconText}>✉</Text></View>
+              <View style={styles.sectionTitleBlock}>
+                <Text style={styles.sectionTitle}>Pending information follow-up</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Businesses you have informed; approve or reject them when ready.
+                </Text>
+              </View>
+              <View style={styles.informedCount}>
+                <Text style={styles.informedCountText}>{informedPending.length} informed</Text>
+              </View>
+            </View>
+
+            <View style={styles.tableCard}>
+              {isWide ? (
+                <View style={styles.tableHeader}>
+                  <Text style={styles.numberHeader}>#</Text>
+                  <Text style={styles.companyHeader}>Company name</Text>
+                  <Text style={styles.emailHeader}>Email</Text>
+                  <Text style={styles.phoneHeader}>Phone</Text>
+                  <Text style={styles.typeHeader}>Type</Text>
+                  <Text style={styles.dateHeader}>Applied on</Text>
+                  <Text style={styles.actionsHeader}>Actions</Text>
+                </View>
+              ) : null}
+              {renderTableRows(informedPending, 'pending')}
             </View>
 
             <View style={[styles.sectionHeader, styles.approvedSectionHeader]}>
@@ -558,6 +711,114 @@ export default function AdminScreen() {
         </ScrollView>
       </View>
 
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setDetailsPartner(null)}
+        transparent
+        visible={detailsPartner !== null}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.detailsCard}>
+            <View style={styles.detailsHeader}>
+              <View style={styles.detailsTitleBlock}>
+                <Text style={styles.detailsEyebrow}>BUSINESS APPLICATION</Text>
+                <Text style={styles.detailsTitle}>{detailsPartner?.company}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close business details"
+                onPress={() => setDetailsPartner(null)}
+                style={styles.detailsCloseButton}>
+                <Text style={styles.detailsCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.detailsContent}>
+              <DetailsItem label="Contact name" value={detailsPartner?.contactName} />
+              <DetailsItem label="Shop / business name" value={detailsPartner?.company} />
+              <DetailsItem label="Phone number" value={detailsPartner?.phone} />
+              <DetailsItem label="Email" value={detailsPartner?.email} />
+              <DetailsItem label="GST number" value={detailsPartner?.gstin} />
+              <DetailsItem label="License number" value={detailsPartner?.licenseNumber} />
+              <DetailsItem label="FSSAI number" value={detailsPartner?.fssaiNumber} />
+              <DetailsItem label="District" value={detailsPartner?.district} />
+              <DetailsItem label="Address" value={detailsPartner?.address} />
+              <Text style={styles.detailsImageLabel}>License photo</Text>
+              {licensePreviewLoading ? (
+                <Text style={styles.detailsImagePlaceholder}>Loading license photo...</Text>
+              ) : licenseImageUrl ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open license photo"
+                  onPress={() => setLicenseZoomVisible(true)}>
+                  <Image
+                    source={{ uri: licenseImageUrl }}
+                    style={styles.licenseThumbnail}
+                    contentFit="contain"
+                  />
+                  <Text style={styles.imageHint}>Tap the photo to view full size</Text>
+                </Pressable>
+              ) : licensePreviewError ? (
+                <Text accessibilityRole="alert" style={styles.detailsImageError}>
+                  {licensePreviewError}
+                </Text>
+              ) : (
+                <Text style={styles.detailsImagePlaceholder}>No license photo uploaded.</Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setLicenseZoomVisible(false)}
+        transparent
+        visible={licenseZoomVisible && licenseImageUrl !== null}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close full-size license photo"
+          onPress={() => setLicenseZoomVisible(false)}
+          style={styles.licenseZoomBackdrop}>
+          {licenseImageUrl ? (
+            <Image
+              source={{ uri: licenseImageUrl }}
+              style={styles.licenseFullImage}
+              contentFit="contain"
+            />
+          ) : null}
+          <Text style={styles.licenseZoomClose}>Tap anywhere to close</Text>
+        </Pressable>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setApprovePartnerTarget(null)}
+        transparent
+        visible={approvePartnerTarget !== null}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmCard}>
+            <View style={styles.approveConfirmIcon}><Text style={styles.confirmIconText}>✓</Text></View>
+            <Text style={styles.confirmTitle}>Approve this business?</Text>
+            <Text style={styles.confirmMessage}>
+              {approvePartnerTarget?.company} will receive an automatic approval notification.
+            </Text>
+            <View style={styles.confirmActions}>
+              <Pressable
+                disabled={savingPartnerId !== null}
+                onPress={() => setApprovePartnerTarget(null)}
+                style={styles.cancelButton}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={savingPartnerId !== null}
+                onPress={() => approvePartnerTarget && void approvePartner(approvePartnerTarget)}
+                style={[styles.approveConfirmButton, savingPartnerId !== null && styles.disabledButton]}>
+                <Text style={styles.deleteConfirmText}>
+                  {savingPartnerId === approvePartnerTarget?.id ? 'Approving...' : 'Approve & notify'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         animationType="fade"
         onRequestClose={() => setMobileMenuVisible(false)}
@@ -628,15 +889,15 @@ export default function AdminScreen() {
             <View style={styles.confirmIcon}><Text style={styles.confirmIconText}>!</Text></View>
             <Text style={styles.confirmTitle}>Reject this request?</Text>
             <Text style={styles.confirmMessage}>
-              {rejectPartnerTarget?.company} will be marked as rejected. Tell the business why its application was not approved.
+              {rejectPartnerTarget?.company} will receive the automatic rejection notice followed by your message in the same notification.
             </Text>
-            <Text style={styles.rejectionReasonLabel}>Reason for rejection *</Text>
+            <Text style={styles.rejectionReasonLabel}>Message to business *</Text>
             <TextInput
-              accessibilityLabel="Reason for rejecting this business"
+              accessibilityLabel="Message to the rejected business"
               editable={savingPartnerId === null}
               multiline
               onChangeText={setRejectionReason}
-              placeholder="Explain what needs to be corrected..."
+              placeholder="Write a note explaining what needs to be corrected..."
               placeholderTextColor="#8b958d"
               style={styles.rejectionReasonInput}
               textAlignVertical="top"
@@ -658,7 +919,54 @@ export default function AdminScreen() {
                   (!rejectionReason.trim() || savingPartnerId !== null) && styles.disabledButton,
                 ]}>
                 <Text style={styles.deleteConfirmText}>
-                  {savingPartnerId === rejectPartnerTarget?.id ? 'Rejecting...' : 'Reject request'}
+                  {savingPartnerId === rejectPartnerTarget?.id ? 'Rejecting...' : 'Reject & notify'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setManualNotificationTarget(null)}
+        transparent
+        visible={manualNotificationTarget !== null}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmCard}>
+            <View style={styles.informConfirmIcon}><Text style={styles.informConfirmIconText}>✉</Text></View>
+            <Text style={styles.confirmTitle}>Send information?</Text>
+            <Text style={styles.confirmMessage}>
+              Send a separate in-app notification to {manualNotificationTarget?.company}.
+            </Text>
+            <Text style={styles.rejectionReasonLabel}>Message *</Text>
+            <TextInput
+              accessibilityLabel="Information message to the business"
+              editable={savingPartnerId === null}
+              multiline
+              onChangeText={setManualNotificationMessage}
+              placeholder="Write the information you want to share..."
+              placeholderTextColor="#8b958d"
+              style={styles.rejectionReasonInput}
+              textAlignVertical="top"
+              value={manualNotificationMessage}
+            />
+            <View style={styles.confirmActions}>
+              <Pressable
+                disabled={savingPartnerId !== null}
+                onPress={() => setManualNotificationTarget(null)}
+                style={styles.cancelButton}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={!manualNotificationMessage.trim() || savingPartnerId !== null}
+                onPress={() => void sendManualNotification()}
+                style={[
+                  styles.informConfirmButton,
+                  (!manualNotificationMessage.trim() || savingPartnerId !== null) && styles.disabledButton,
+                ]}>
+                <Text style={styles.informConfirmButtonText}>
+                  {savingPartnerId === manualNotificationTarget?.id ? 'Sending...' : 'Send information'}
                 </Text>
               </Pressable>
             </View>
@@ -702,6 +1010,15 @@ export default function AdminScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+function DetailsItem({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <View style={styles.detailsItem}>
+      <Text style={styles.detailsLabel}>{label}</Text>
+      <Text style={styles.detailsValue}>{value?.trim() || 'Not provided'}</Text>
+    </View>
   );
 }
 
@@ -1427,6 +1744,11 @@ const styles = StyleSheet.create({
     marginTop: 18,
     backgroundColor: '#edf8eb',
   },
+  informedSectionHeader: {
+    marginTop: 18,
+    backgroundColor: '#eef5fb',
+    borderColor: '#dce9f2',
+  },
   sectionIconPending: {
     width: 34,
     height: 34,
@@ -1442,6 +1764,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 18,
     backgroundColor: '#259445',
+  },
+  sectionIconInformed: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: '#4384a6',
   },
   sectionIconText: {
     color: '#ffffff',
@@ -1498,6 +1828,17 @@ const styles = StyleSheet.create({
   },
   approvedCountText: {
     color: '#347246',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  informedCount: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#dcecf6',
+  },
+  informedCountText: {
+    color: '#356d8e',
     fontSize: 9,
     fontWeight: '800',
   },
@@ -1658,7 +1999,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   actionCell: {
-    width: 170,
+    width: 312,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -1666,7 +2007,40 @@ const styles = StyleSheet.create({
   },
   mobileActionCell: {
     width: '100%',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
+    flexWrap: 'wrap',
+  },
+  detailsButton: {
+    minWidth: 56,
+    minHeight: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#dce8dc',
+    borderRadius: 15,
+    backgroundColor: '#f7fbf6',
+  },
+  detailsButtonText: {
+    color: '#42654a',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  informButton: {
+    minWidth: 70,
+    minHeight: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 9,
+    borderWidth: 1,
+    borderColor: '#c9e2f2',
+    borderRadius: 15,
+    backgroundColor: '#eef8fd',
+  },
+  informButtonText: {
+    color: '#347292',
+    fontSize: 10,
+    fontWeight: '800',
   },
   approveButton: {
     minWidth: 82,
@@ -1675,6 +2049,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
     borderRadius: 15,
+    backgroundColor: '#238f40',
+  },
+  approveConfirmIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#e5f4e3',
+  },
+  approveConfirmButton: {
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderRadius: 9,
     backgroundColor: '#238f40',
   },
   disabledButton: {
@@ -1746,6 +2136,122 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: 'rgba(19,38,25,0.48)',
   },
+  detailsCard: {
+    width: '100%',
+    maxWidth: 600,
+    maxHeight: '90%',
+    overflow: 'hidden',
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8eee8',
+  },
+  detailsTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  detailsEyebrow: {
+    color: '#589063',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  detailsTitle: {
+    color: '#293a2e',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  detailsCloseButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    backgroundColor: '#f2f6f2',
+  },
+  detailsCloseText: {
+    color: '#54645a',
+    fontSize: 22,
+    lineHeight: 24,
+  },
+  detailsScroll: {
+    flexShrink: 1,
+  },
+  detailsContent: {
+    padding: 18,
+  },
+  detailsItem: {
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eef1ee',
+  },
+  detailsLabel: {
+    color: '#7b897e',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  detailsValue: {
+    color: '#304235',
+    fontSize: 12,
+    marginTop: 3,
+  },
+  detailsImageLabel: {
+    color: '#425146',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  detailsImagePlaceholder: {
+    padding: 14,
+    borderRadius: 10,
+    color: '#748078',
+    fontSize: 10,
+    backgroundColor: '#f5f8f5',
+  },
+  detailsImageError: {
+    padding: 14,
+    borderRadius: 10,
+    color: '#a74740',
+    fontSize: 10,
+    backgroundColor: '#fff0ef',
+  },
+  licenseThumbnail: {
+    width: '100%',
+    height: 210,
+    borderRadius: 10,
+    backgroundColor: '#f3f6f3',
+  },
+  imageHint: {
+    color: '#718174',
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  licenseZoomBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+  },
+  licenseFullImage: {
+    width: '100%',
+    height: '85%',
+  },
+  licenseZoomClose: {
+    color: '#ffffff',
+    fontSize: 11,
+    marginTop: 12,
+  },
   confirmCard: {
     width: '100%',
     maxWidth: 390,
@@ -1765,6 +2271,31 @@ const styles = StyleSheet.create({
     color: '#a64c43',
     fontSize: 20,
     fontWeight: '800',
+  },
+  informConfirmIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#eaf5fb',
+  },
+  informConfirmIconText: {
+    color: '#347292',
+    fontSize: 18,
+  },
+  informConfirmButton: {
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 9,
+    backgroundColor: '#347fa0',
+  },
+  informConfirmButtonText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   confirmTitle: {
     color: '#293a2e',

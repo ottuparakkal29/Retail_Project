@@ -12,6 +12,7 @@ const GREEN = '#138a39';
 const DARK_GREEN = '#07552c';
 
 type Account = {
+  address: string;
   email: string;
   fullName: string;
   phone: string;
@@ -38,12 +39,13 @@ export default function ProfileScreen() {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, phone, role')
+          .select('full_name, phone, role, address')
           .eq('auth_user_id', userId)
           .maybeSingle();
         if (error) throw error;
         if (active) {
           setAccount({
+            address: data?.address ?? '',
             email,
             fullName: data?.full_name ?? '',
             phone: data?.phone ?? '',
@@ -87,14 +89,16 @@ export default function ProfileScreen() {
   }, []);
 
   async function signOut() {
+    if (signingOut) return;
     setSigningOut(true);
     setSignOutError('');
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
       if (error) throw error;
       router.replace('/');
     } catch (error) {
       setSignOutError(error instanceof Error ? error.message : 'Unable to sign out.');
+    } finally {
       setSigningOut(false);
     }
   }
@@ -190,10 +194,19 @@ export default function ProfileScreen() {
                   </View>
                 </View>
                 <View style={styles.addressEmpty}>
-                  <Text style={styles.addressTitle}>No saved address yet</Text>
-                  <Text style={styles.addressHint}>
-                    Add your address during checkout to make your next order easier.
-                  </Text>
+                  {account?.address ? (
+                    <>
+                      <Text style={styles.addressTitle}>Saved delivery address</Text>
+                      <Text style={styles.addressValue}>{account.address}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.addressTitle}>No saved address yet</Text>
+                      <Text style={styles.addressHint}>
+                        Add your address during checkout to make your next order easier.
+                      </Text>
+                    </>
+                  )}
                 </View>
               </View>
             </View>
@@ -547,6 +560,12 @@ const styles = StyleSheet.create({
     color: '#455649',
     fontSize: 11,
     fontWeight: '700',
+  },
+  addressValue: {
+    color: '#829087',
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 4,
   },
   addressHint: {
     color: '#829087',

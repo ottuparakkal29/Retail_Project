@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import {
   Modal,
@@ -12,6 +12,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText as Text } from '@/components/app-text';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { supabase } from '@/lib/supabase';
+
+type SentBusinessMessage = {
+  notification_id: string;
+  business_profile_id: string;
+  business_name: string;
+  title: string;
+  message: string;
+  created_at: string;
+  is_read: boolean;
+};
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = error.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
 
 const salesByBusinessType = [
   { type: 'Manufacturer', orders: 148, productsSold: 1240, revenue: 186000, color: '#318b48' },
@@ -38,6 +57,23 @@ export default function AnalyticsScreen() {
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const [adminAccess, setAdminAccess] = useState<'checking' | 'allowed' | 'denied'>('checking');
   const [accessError, setAccessError] = useState('');
+  const [sentMessages, setSentMessages] = useState<SentBusinessMessage[]>([]);
+  const [sentMessagesLoading, setSentMessagesLoading] = useState(true);
+  const [sentMessagesError, setSentMessagesError] = useState('');
+
+  const loadSentMessages = useCallback(async () => {
+    setSentMessagesLoading(true);
+    setSentMessagesError('');
+    try {
+      const { data, error } = await supabase.rpc('admin_list_business_notifications');
+      if (error) throw error;
+      setSentMessages((data ?? []) as SentBusinessMessage[]);
+    } catch (error) {
+      setSentMessagesError(getErrorMessage(error, 'Unable to load sent messages.'));
+    } finally {
+      setSentMessagesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +101,7 @@ export default function AnalyticsScreen() {
         }
 
         if (active) setAdminAccess('allowed');
+        void loadSentMessages();
       } catch (error) {
         if (active) {
           setAccessError(error instanceof Error ? error.message : 'Unable to verify admin access.');
@@ -77,7 +114,7 @@ export default function AnalyticsScreen() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadSentMessages]);
 
   const totals = salesByBusinessType.reduce(
     (result, partner) => ({
@@ -291,6 +328,60 @@ export default function AnalyticsScreen() {
                   </View>
                 </View>
               </ScrollView>
+            </View>
+
+            <View style={styles.sentMessagesCard}>
+              <View style={styles.sentMessagesHeader}>
+                <View style={styles.sentMessagesHeading}>
+                  <Text style={styles.cardTitle}>Information sent to businesses</Text>
+                  <Text style={styles.cardSubtitle}>
+                    Manual messages delivered from the admin dashboard.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh sent business messages"
+                  disabled={sentMessagesLoading}
+                  onPress={() => void loadSentMessages()}
+                  style={({ pressed }) => [
+                    styles.sentMessagesRefresh,
+                    pressed && styles.pressed,
+                    sentMessagesLoading && styles.disabledButton,
+                  ]}>
+                  <Text style={styles.sentMessagesRefreshText}>
+                    {sentMessagesLoading ? 'Loading…' : '↻ Refresh'}
+                  </Text>
+                </Pressable>
+              </View>
+              {sentMessagesError ? (
+                <Text accessibilityLiveRegion="polite" style={styles.sentMessagesError}>
+                  {sentMessagesError}
+                </Text>
+              ) : sentMessagesLoading ? (
+                <Text style={styles.sentMessagesEmpty}>Loading sent messages…</Text>
+              ) : sentMessages.length === 0 ? (
+                <Text style={styles.sentMessagesEmpty}>No manual messages sent yet.</Text>
+              ) : (
+                <View style={styles.sentMessagesList}>
+                  {sentMessages.map((item) => (
+                    <View key={item.notification_id} style={styles.sentMessageRow}>
+                      <View style={styles.sentMessageIcon}>
+                        <Text style={styles.sentMessageIconText}>✉</Text>
+                      </View>
+                      <View style={styles.sentMessageCopy}>
+                        <View style={styles.sentMessageTitleRow}>
+                          <Text style={styles.sentMessageBusiness}>{item.business_name}</Text>
+                          <Text style={styles.sentMessageDate}>
+                            {new Date(item.created_at).toLocaleString()}
+                          </Text>
+                        </View>
+                        <Text style={styles.sentMessageTitle}>{item.title}</Text>
+                        <Text style={styles.sentMessageBody}>{item.message}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
 
             <Text style={styles.disclaimer}>
@@ -953,6 +1044,108 @@ const styles = StyleSheet.create({
     borderColor: '#e7ece7',
     borderRadius: 14,
     backgroundColor: '#ffffff',
+  },
+  sentMessagesCard: {
+    marginTop: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e7ece7',
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+  },
+  sentMessagesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 13,
+  },
+  sentMessagesHeading: {
+    flex: 1,
+  },
+  sentMessagesRefresh: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#eaf5eb',
+  },
+  sentMessagesRefreshText: {
+    color: '#28713b',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  sentMessagesList: {
+    gap: 9,
+  },
+  sentMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 11,
+    borderRadius: 11,
+    backgroundColor: '#f7faf6',
+    borderWidth: 1,
+    borderColor: '#edf1ec',
+  },
+  sentMessageIcon: {
+    width: 29,
+    height: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: '#eaf4fb',
+  },
+  sentMessageIconText: {
+    color: '#347292',
+    fontSize: 13,
+  },
+  sentMessageCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sentMessageTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sentMessageBusiness: {
+    flex: 1,
+    color: '#2b3d30',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  sentMessageDate: {
+    color: '#89958b',
+    fontSize: 8,
+    textAlign: 'right',
+  },
+  sentMessageTitle: {
+    color: '#50705a',
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  sentMessageBody: {
+    color: '#66746a',
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 5,
+  },
+  sentMessagesEmpty: {
+    color: '#87938a',
+    fontSize: 10,
+    paddingVertical: 16,
+    textAlign: 'center',
+  },
+  sentMessagesError: {
+    color: '#a43b34',
+    fontSize: 10,
+    paddingVertical: 12,
+  },
+  disabledButton: {
+    opacity: 0.55,
   },
   detailTable: {
     marginTop: 13,
