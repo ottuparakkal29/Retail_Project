@@ -13,7 +13,17 @@ const DARK_GREEN = '#07552c';
 
 export default function CartScreen() {
   const isWide = useResponsiveBreakpoint(850);
-  const { items, itemCount, subtotal, addItem, setItemQuantity, removeItem, clearCart } = useCart();
+  const {
+    items,
+    itemCount,
+    subtotal,
+    addItem,
+    setItemQuantity,
+    removeItem,
+    clearCart,
+    error: cartError,
+    dismissError,
+  } = useCart();
   const [notice, setNotice] = useState('');
   const deliveryFee = subtotal === 0 || subtotal >= 499 ? 0 : 40;
   const total = subtotal + deliveryFee;
@@ -70,6 +80,16 @@ export default function CartScreen() {
             ) : null}
           </View>
 
+          {cartError ? (
+            <Pressable
+              accessibilityRole="alert"
+              onPress={dismissError}
+              style={[styles.notice, styles.errorNotice]}>
+              <Text style={styles.errorNoticeText}>{cartError}</Text>
+              <Text style={styles.errorDismiss}>×</Text>
+            </Pressable>
+          ) : null}
+
           {notice ? (
             <View accessibilityLiveRegion="polite" style={styles.notice}>
               <Text style={styles.noticeText}>{notice}</Text>
@@ -94,13 +114,19 @@ export default function CartScreen() {
             <View style={[styles.cartLayout, isWide && styles.cartLayoutWide]}>
               <View style={styles.itemList}>
                 {items.map(({ product, quantity }) => (
-                  <View key={product.name} style={styles.itemCard}>
-                    <Image
-                      accessibilityLabel={product.name}
-                      source={product.image}
-                      contentFit="cover"
-                      style={styles.productImage}
-                    />
+                  <View key={product.id} style={styles.itemCard}>
+                    {product.image ? (
+                      <Image
+                        accessibilityLabel={product.name}
+                        source={{ uri: product.image }}
+                        contentFit="cover"
+                        style={styles.productImage}
+                      />
+                    ) : (
+                      <View style={[styles.productImage, styles.productImagePlaceholder]}>
+                        <Text style={styles.productImagePlaceholderText}>✳</Text>
+                      </View>
+                    )}
                     <View style={styles.itemInfo}>
                       <Text numberOfLines={2} style={styles.productName}>{product.name}</Text>
                       <Text style={styles.productDetail}>{product.detail}</Text>
@@ -108,8 +134,8 @@ export default function CartScreen() {
                       <View style={[styles.mobileActions, isWide && styles.mobileActionsWide]}>
                         <QuantityControl
                           quantity={quantity}
-                          onDecrease={() => setItemQuantity(product.name, quantity - 1)}
-                          onIncrease={() => addItem(product)}
+                          onDecrease={() => void setItemQuantity(product.id, quantity - 1)}
+                          onIncrease={() => void addItem(product)}
                         />
                         <Text style={styles.lineTotal}>₹{product.price * quantity}</Text>
                       </View>
@@ -117,15 +143,15 @@ export default function CartScreen() {
                     <View style={[styles.desktopItemActions, isWide && styles.desktopItemActionsWide]}>
                       <QuantityControl
                         quantity={quantity}
-                        onDecrease={() => setItemQuantity(product.name, quantity - 1)}
-                        onIncrease={() => addItem(product)}
+                        onDecrease={() => void setItemQuantity(product.id, quantity - 1)}
+                        onIncrease={() => void addItem(product)}
                       />
                       <Text style={styles.lineTotal}>₹{product.price * quantity}</Text>
                     </View>
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Remove ${product.name} from cart`}
-                      onPress={() => removeItem(product.name)}
+                      onPress={() => void removeItem(product.id)}
                       style={styles.removeButton}>
                       <Text style={styles.removeButtonText}>×</Text>
                     </Pressable>
@@ -312,6 +338,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#eef8ec',
   },
+  errorNotice: {
+    borderColor: '#f0d0ce',
+    backgroundColor: '#fff0ef',
+  },
+  errorNoticeText: {
+    flex: 1,
+    color: '#9e3733',
+    fontSize: 11,
+  },
+  errorDismiss: {
+    color: '#9e3733',
+    fontSize: 20,
+  },
   noticeText: {
     color: '#326643',
     fontSize: 10,
@@ -394,6 +433,15 @@ const styles = StyleSheet.create({
     height: 88,
     borderRadius: 10,
     backgroundColor: '#f1f5f1',
+  },
+  productImagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#edf3ed',
+  },
+  productImagePlaceholderText: {
+    color: '#9eb49f',
+    fontSize: 24,
   },
   itemInfo: {
     flex: 1,

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import {
@@ -13,9 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
+import { KeralaLocationSelectors } from '@/components/kerala-location-selectors';
 import NotificationWrapper from '@/components/notification-wrapper';
-import { products } from '@/constants/products';
 import { useCart } from '@/contexts/cart-context';
+import { useKeralaLocations } from '@/hooks/use-kerala-locations';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { supabase } from '@/lib/supabase';
 
@@ -24,22 +24,16 @@ const DARK_GREEN = '#07552c';
 const MUTED = '#68756b';
 
 const businessTypes = ['Manufacturer', 'Retailer', 'Wholesaler', 'Distributor'] as const;
-const keralaDistricts = [
-  'Thiruvananthapuram',
-  'Kollam',
-  'Pathanamthitta',
-  'Alappuzha',
-  'Kottayam',
-  'Idukki',
-  'Ernakulam',
-  'Thrissur',
-  'Palakkad',
-  'Malappuram',
-  'Kozhikode',
-  'Wayanad',
-  'Kannur',
-  'Kasaragod',
-];
+type Shop = {
+  id: string;
+  business_name: string;
+  business_type: string | null;
+  district: string | null;
+  taluk: string | null;
+  village: string | null;
+  address: string | null;
+  contact_phone: string | null;
+};
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
@@ -51,54 +45,22 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-const categories = [
-  { name: 'Fruits', image: require('../../assets/images/store/apples.jpg') },
-  { name: 'Vegetables', image: require('../../assets/images/store/spinach.jpg') },
-  { name: 'Dairy', image: require('../../assets/images/store/milk.jpg') },
-  { name: 'Snacks', image: require('../../assets/images/store/chips.jpg') },
-  { name: 'Beverages', image: require('../../assets/images/store/oranges.jpg') },
-  { name: 'Bakery', image: require('../../assets/images/store/bread.jpg') },
-  { name: 'Household', image: require('../../assets/images/store/handwash.jpg') },
-  { name: 'Personal care', image: require('../../assets/images/store/handwash.jpg') },
-  { name: 'Organic', image: require('../../assets/images/store/avocado.jpg') },
-];
-
-const heroSlides = [
-  {
-    eyebrow: 'GOOD FOOD, GOOD MOOD',
-    headline: 'Fresh & healthy',
-    highlight: 'groceries for you!',
-    subtitle: 'Shop fresh. Live healthy.',
-    category: 'Fruits',
-    image: require('../../assets/images/store/slider 1.jpg'),
-    imageLabel: 'Fresh apples ready to enjoy',
-  },
-  {
-    eyebrow: 'A LITTLE GREEN GOES A LONG WAY',
-    headline: 'Greens that make',
-    highlight: 'every meal better.',
-    subtitle: 'Hand-picked goodness, delivered fresh.',
-    category: 'Vegetables',
-    image: require('../../assets/images/store/slider 2.jpg'),
-    imageLabel: 'Fresh leafy greens at the market',
-  },
-  {
-    eyebrow: 'FRESH FROM THE FARM',
-    headline: 'Pick the best',
-    highlight: 'from every season.',
-    subtitle: 'Discover nature’s freshest picks.',
-    category: 'Organic',
-    image: require('../../assets/images/store/slider 3.avif'),
-    imageLabel: 'Seasonal fresh produce',
-  },
-];
-
 export default function HomeScreen() {
   const isWide = useResponsiveBreakpoint(760);
   const isTablet = useResponsiveBreakpoint(600);
-  const { addItem, itemCount } = useCart();
+  const { itemCount } = useCart();
+  const {
+    locations,
+    loading: locationsLoading,
+    error: locationsError,
+  } = useKeralaLocations();
   const [query, setQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [shopsLoading, setShopsLoading] = useState(true);
+  const [shopsError, setShopsError] = useState('');
+  const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [selectedTaluk, setSelectedTaluk] = useState('');
+  const [selectedVillage, setSelectedVillage] = useState('');
   const [signupVisible, setSignupVisible] = useState(false);
   const [signupName, setSignupName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
@@ -119,11 +81,12 @@ export default function HomeScreen() {
   const [businessGstin, setBusinessGstin] = useState('');
   const [businessFssai, setBusinessFssai] = useState('');
   const [businessDistrict, setBusinessDistrict] = useState('');
+  const [businessTaluk, setBusinessTaluk] = useState('');
+  const [businessVillage, setBusinessVillage] = useState('');
   const [businessAddress, setBusinessAddress] = useState('');
   const [licenseImageName, setLicenseImageName] = useState('');
   const [licenseImage, setLicenseImage] =
     useState<DocumentPicker.DocumentPickerAsset | null>(null);
-  const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
   const [businessMessage, setBusinessMessage] = useState('');
   const [businessSubmitting, setBusinessSubmitting] = useState(false);
   const [loginVisible, setLoginVisible] = useState(false);
@@ -135,34 +98,62 @@ export default function HomeScreen() {
   const [celebration, setCelebration] = useState<{ title: string; message: string } | null>(null);
   const [homeNotice, setHomeNotice] = useState('');
   const [homeNoticeIsError] = useState(false);
-  const [activeSlide, setActiveSlide] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveSlide((current) => (current + 1) % heroSlides.length);
-    }, 5000);
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSignedInEmail(session?.user.email ?? null);
     });
     return () => {
-      clearInterval(timer);
       subscription.unsubscribe();
     };
   }, []);
 
-  const visibleProducts = useMemo(() => {
+  useEffect(() => {
+    let active = true;
+    async function loadShops() {
+      setShopsLoading(true);
+      setShopsError('');
+      const { data, error } = await supabase
+        .from('business_profiles')
+        .select('id, business_name, business_type, district, taluk, village, address, contact_phone')
+        .eq('approval_status', 'approved')
+        .order('business_name');
+      if (!active) return;
+      if (error) {
+        setShopsError(error.message);
+      } else {
+        setShops((data ?? []) as Shop[]);
+      }
+      setShopsLoading(false);
+    }
+
+    void loadShops().catch((error: unknown) => {
+      if (active) {
+        setShopsError(getErrorMessage(error, 'Unable to load shops right now.'));
+        setShopsLoading(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const visibleShops = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return products.filter((product) => {
-      const matchesCategory = !selectedCategory || product.category === selectedCategory;
+    return shops.filter((shop) => {
+      const matchesDistrict =
+        !selectedDistrict || shop.district?.trim() === selectedDistrict;
+      const matchesTaluk = !selectedTaluk || shop.taluk?.trim() === selectedTaluk;
+      const matchesVillage = !selectedVillage || shop.village?.trim() === selectedVillage;
       const matchesSearch =
         !normalizedQuery ||
-        product.name.toLowerCase().includes(normalizedQuery) ||
-        product.category.toLowerCase().includes(normalizedQuery);
-      return matchesCategory && matchesSearch;
+        shop.business_name.toLowerCase().includes(normalizedQuery) ||
+        (shop.business_type ?? '').toLowerCase().includes(normalizedQuery);
+      return matchesDistrict && matchesTaluk && matchesVillage && matchesSearch;
     });
-  }, [query, selectedCategory]);
+  }, [query, shops, selectedDistrict, selectedTaluk, selectedVillage]);
 
   async function signIn() {
     const email = loginUsername.trim().toLowerCase();
@@ -313,11 +304,13 @@ export default function HomeScreen() {
       businessPassword.length < 8 ||
       !businessLicenseNumber.trim() ||
       !businessDistrict ||
+      !businessTaluk ||
+      !businessVillage ||
       !businessAddress.trim() ||
       !licenseImage
     ) {
       setBusinessMessage(
-        'Complete all required fields, choose a business type and district, upload a license image, and use a valid email, phone number, and password.',
+        'Complete all required fields, select a district, taluk, and village, upload a license image, and use a valid email, phone number, and password.',
       );
       return;
     }
@@ -342,6 +335,8 @@ export default function HomeScreen() {
             gstin: businessGstin.trim() || null,
             fssai_number: businessFssai.trim() || null,
             district: businessDistrict,
+            taluk: businessTaluk,
+            village: businessVillage,
             address: businessAddress.trim(),
           },
         },
@@ -379,26 +374,15 @@ export default function HomeScreen() {
         throw new Error('Your account was created, but its profile is not ready yet. Please sign in and try again.');
       }
 
-      const { error: businessProfileError } = await supabase
+      const { data: businessProfile, error: businessProfileError } = await supabase
         .from('business_profiles')
-        .upsert(
-          {
-            user_id: profile.id,
-            business_name: businessName.trim(),
-            business_type: businessType,
-            contact_name: businessContact.trim(),
-            contact_email: email,
-            contact_phone: businessPhone.trim(),
-            license_number: businessLicenseNumber.trim(),
-            gstin: businessGstin.trim() || null,
-            fssai_number: businessFssai.trim() || null,
-            district: businessDistrict,
-            address: businessAddress.trim(),
-            approval_status: 'pending',
-          },
-          { onConflict: 'user_id' },
-        );
+        .select('id')
+        .eq('user_id', profile.id)
+        .maybeSingle();
       if (businessProfileError) throw businessProfileError;
+      if (!businessProfile) {
+        throw new Error('Your business application is not ready yet. Please sign in and try again.');
+      }
 
       const safeFileName = licenseImage.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const documentPath = `${data.user.id}/${Date.now()}-${safeFileName}`;
@@ -450,7 +434,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           <View style={[styles.header, isWide && styles.wideHeader]}>
-            <Pressable onPress={() => setSelectedCategory('')} style={styles.brand}>
+            <Pressable onPress={() => setQuery('')} style={styles.brand}>
               <Text style={styles.brandLeaf}>🌿</Text>
               <View>
                 <Text style={styles.brandName}>FreshCart</Text>
@@ -461,8 +445,8 @@ export default function HomeScreen() {
             {isWide && (
               <View style={[styles.searchBar, styles.wideSearchBar]}>
                 <TextInput
-                  accessibilityLabel="Search products"
-                  placeholder="Search for products..."
+                  accessibilityLabel="Search shops"
+                  placeholder="Search shops..."
                   placeholderTextColor="#8b958d"
                   value={query}
                   onChangeText={setQuery}
@@ -476,11 +460,12 @@ export default function HomeScreen() {
 
             <View style={[styles.headerActions, !isWide && styles.headerActionsCompact]}>
               {isWide && (
-                <Pressable style={styles.location}>
+                <View style={styles.location}>
                   <Text style={styles.locationIcon}>⌖</Text>
-                  <Text style={styles.locationText}>Kerala</Text>
-                  <Text style={styles.chevron}>⌄</Text>
-                </Pressable>
+                  <Text style={styles.locationText}>
+                    {selectedDistrict || 'Kerala'}
+                  </Text>
+                </View>
               )}
               <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
                 {signupVisible || loginVisible ? null : !signedInEmail ? (
@@ -531,8 +516,8 @@ export default function HomeScreen() {
           {!isWide && (
             <View style={styles.searchBar}>
               <TextInput
-                accessibilityLabel="Search products"
-                placeholder="Search fresh groceries..."
+                accessibilityLabel="Search shops"
+                placeholder="Search shops..."
                 placeholderTextColor="#8b958d"
                 value={query}
                 onChangeText={setQuery}
@@ -544,180 +529,107 @@ export default function HomeScreen() {
             </View>
           )}
 
-          <View style={[styles.hero, !isWide && styles.heroCompact]}>
-            <View style={styles.heroCopy}>
-              <Text style={[styles.eyebrow, !isWide && styles.eyebrowCompact]}>
-                {heroSlides[activeSlide].eyebrow}
-              </Text>
-              <Text style={[styles.heroTitle, !isWide && styles.heroTitleCompact]}>
-                {heroSlides[activeSlide].headline}{'\n'}
-                <Text style={styles.heroTitleGreen}>{heroSlides[activeSlide].highlight}</Text>
-              </Text>
-              <Text style={styles.heroSubtitle}>{heroSlides[activeSlide].subtitle}</Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setSelectedCategory(heroSlides[activeSlide].category)}
-                style={styles.heroButton}>
-                <Text style={styles.heroButtonText}>Shop fresh <Text style={styles.buttonArrow}>→</Text></Text>
-              </Pressable>
-            </View>
-            <View style={styles.heroArt}>
-              <Image
-                accessibilityLabel={heroSlides[activeSlide].imageLabel}
-                source={heroSlides[activeSlide].image}
-                style={styles.heroPhoto}
-                contentFit="cover"
-                transition={300}
-              />
-            </View>
-            <View style={styles.heroDots}>
-              {heroSlides.map((slide, index) => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Show slide ${index + 1}: ${slide.eyebrow}`}
-                  accessibilityState={{ selected: activeSlide === index }}
-                  key={slide.eyebrow}
-                  onPress={() => setActiveSlide(index)}
-                  style={styles.dotButton}>
-                  <View style={[styles.dot, activeSlide === index && styles.dotActive]} />
-                </Pressable>
-              ))}
-            </View>
+          <View style={styles.directoryIntro}>
+            <Text style={styles.directoryEyebrow}>SHOP LOCAL, SHOP FRESH</Text>
+            <Text style={styles.directoryTitle}>Find your next favourite shop</Text>
+            <Text style={styles.directorySubtitle}>
+              Browse approved FreshCart businesses by district, taluk, and village.
+            </Text>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categories}>
-            {categories.map((category) => {
-              const isSelected = selectedCategory === category.name;
-              return (
-                <Pressable
-                  key={category.name}
-                  onPress={() =>
-                    setSelectedCategory(isSelected ? '' : category.name)
-                  }
-                  style={[styles.categoryCard, isSelected && styles.categorySelected]}>
-                  <Image source={category.image} style={styles.categoryPhoto} contentFit="cover" />
-                  <Text style={[styles.categoryName, isSelected && styles.categoryNameSelected]}>
-                    {category.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          <View style={[styles.promoRow, !isTablet && styles.promoColumn]}>
-            <View style={[styles.promoCard, styles.producePromo]}>
-              <Image
-                source={require('../../assets/images/store/promo-produce.jpg')}
-                style={styles.promoImage}
-                contentFit="cover"
-              />
-              <View style={styles.promoCopy}>
-                <Text style={styles.promoKicker}>UP TO</Text>
-                <Text style={styles.promoHeadline}>50% OFF</Text>
-                <Text style={styles.promoDetail}>Fresh produce</Text>
-                <Pressable onPress={() => setSelectedCategory('Vegetables')} style={styles.promoButton}>
-                  <Text style={styles.promoButtonText}>Shop now →</Text>
-                </Pressable>
-              </View>
-            </View>
-            <View style={[styles.promoCard, styles.dairyPromo]}>
-              <Image
-                source={require('../../assets/images/store/promo-dairy.jpg')}
-                style={styles.promoImage}
-                contentFit="cover"
-              />
-              <View style={styles.promoCopy}>
-                <Text style={styles.promoKicker}>SPECIAL OFFER</Text>
-                <Text style={styles.promoHeadline}>Flat 30% OFF</Text>
-                <Text style={styles.promoDetail}>on dairy products</Text>
-                <Pressable onPress={() => setSelectedCategory('Dairy')} style={styles.promoButton}>
-                  <Text style={styles.promoButtonText}>Shop now →</Text>
-                </Pressable>
-              </View>
-            </View>
-            <View style={[styles.promoCard, styles.familyPromo]}>
-              <Image
-                source={require('../../assets/images/store/promo-family.jpg')}
-                style={styles.promoImage}
-                contentFit="cover"
-              />
-              <View style={styles.promoCopy}>
-                <Text style={styles.promoKicker}>LIVE WELL</Text>
-                <Text style={styles.promoHeadline}>Healthy living</Text>
-                <Text style={styles.promoDetail}>better tomorrow</Text>
-                <Pressable onPress={() => setSelectedCategory('Organic')} style={styles.promoButton}>
-                  <Text style={styles.promoButtonText}>Shop now →</Text>
-                </Pressable>
-              </View>
-            </View>
+          <View style={styles.locationFilters}>
+            <KeralaLocationSelectors
+              district={selectedDistrict}
+              taluk={selectedTaluk}
+              village={selectedVillage}
+              locations={locations}
+              onDistrictChange={setSelectedDistrict}
+              onTalukChange={setSelectedTaluk}
+              onVillageChange={setSelectedVillage}
+              includeAllOptions
+              direction={isTablet ? 'row' : 'column'}
+              disabled={locationsLoading || Boolean(locationsError)}
+            />
+            {locationsError ? (
+              <Text style={styles.locationError}>
+                Unable to load Kerala locations: {locationsError}
+              </Text>
+            ) : null}
           </View>
 
-          <View style={styles.productSection}>
-            <View style={styles.sectionHeading}>
-              <View style={styles.sectionTitleWrap}>
-                <Text style={styles.sectionLeaf}>🌿</Text>
+          <View style={styles.shopSection}>
+            <View style={styles.shopSectionHeading}>
+              <View>
                 <Text style={styles.sectionTitle}>
-                  {selectedCategory || 'Popular products'}
+                  {!selectedDistrict && !selectedTaluk && !selectedVillage
+                    ? 'Explore shops'
+                    : 'Shops near you'}
+                </Text>
+                <Text style={styles.shopCount}>
+                  {shopsLoading ? 'Finding approved shops…' : `${visibleShops.length} shops`}
                 </Text>
               </View>
-              {selectedCategory ? (
-                <Pressable onPress={() => setSelectedCategory('')}>
-                  <Text style={styles.viewAll}>Clear filter ×</Text>
+              {selectedDistrict || selectedTaluk || selectedVillage ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSelectedDistrict('');
+                    setSelectedTaluk('');
+                    setSelectedVillage('');
+                  }}>
+                  <Text style={styles.viewAll}>Clear filters ×</Text>
                 </Pressable>
-              ) : (
-                <Pressable onPress={() => setSelectedCategory('')}>
-                  <Text style={styles.viewAll}>View all →</Text>
-                </Pressable>
-              )}
+              ) : null}
             </View>
-            {visibleProducts.length ? (
-              <View style={styles.productGrid}>
-                {visibleProducts.map((product) => (
-                  <View
-                    key={product.name}
-                    style={[
-                      styles.productCard,
-                      { flexBasis: isWide ? '15%' : isTablet ? '31%' : '47%' },
+            {shopsError ? (
+              <View style={styles.directoryEmpty}>
+                <Text style={styles.emptyTitle}>We couldn’t load shops</Text>
+                <Text style={styles.emptyHint}>{shopsError}</Text>
+              </View>
+            ) : shopsLoading ? (
+              <View style={styles.directoryEmpty}>
+                <Text style={styles.emptyHint}>Loading approved shops…</Text>
+              </View>
+            ) : visibleShops.length ? (
+              <View style={styles.shopGrid}>
+                {visibleShops.map((shop) => (
+                  <Pressable
+                    key={shop.id}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Open ${shop.business_name}, ${shop.business_type ?? 'business'}`}
+                    onPress={() =>
+                      router.push({ pathname: '/shop', params: { id: shop.id } })
+                    }
+                    style={({ pressed }) => [
+                      styles.shopCard,
+                      { flexBasis: isWide ? '31%' : isTablet ? '47%' : '100%' },
+                      pressed && styles.shopCardPressed,
                     ]}>
-                    <View style={styles.productImage}>
-                      <Image
-                        source={product.image}
-                        style={styles.productPhoto}
-                        contentFit="cover"
-                        transition={160}
-                      />
-                      <Text style={styles.discountBadge}>{product.discount}% OFF</Text>
-                    </View>
-                    <View style={styles.productInfo}>
-                      <Text numberOfLines={1} style={styles.productName}>{product.name}</Text>
-                      <Text style={styles.productDetail}>{product.detail}</Text>
-                      <Text style={styles.rating}>★ <Text style={styles.ratingText}>{product.rating} ({product.reviews})</Text></Text>
-                      <View style={styles.priceRow}>
-                        <View style={styles.priceGroup}>
-                          <Text style={styles.price}>₹{product.price}</Text>
-                          <Text style={styles.oldPrice}>₹{product.oldPrice}</Text>
-                        </View>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Add ${product.name} to cart`}
-                          onPress={() => addItem(product)}
-                          style={styles.addButton}>
-                          <Text style={styles.addButtonText}>Add to cart</Text>
-                          <Text style={styles.addPlus}>+</Text>
-                        </Pressable>
+                    <View style={styles.shopCardTop}>
+                      <View style={styles.shopIcon}>
+                        <Text style={styles.shopIconText}>
+                          {shop.business_name.slice(0, 1).toUpperCase()}
+                        </Text>
                       </View>
+                      <Text numberOfLines={1} style={styles.businessTypeBadge}>
+                        {shop.business_type || 'Business'}
+                      </Text>
                     </View>
-                  </View>
+                    <Text numberOfLines={2} style={styles.shopName}>{shop.business_name}</Text>
+                    <Text numberOfLines={1} style={styles.shopLocation}>
+                      ⌖ {[shop.village, shop.taluk, shop.district].filter(Boolean).join(', ') || 'Kerala'}
+                    </Text>
+                    <Text style={styles.shopCardLink}>Visit shop <Text style={styles.buttonArrow}>→</Text></Text>
+                  </Pressable>
                 ))}
               </View>
             ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyEmoji}>🥬</Text>
-                <Text style={styles.emptyTitle}>No groceries found</Text>
-                <Text style={styles.emptyHint}>Try another search or category.</Text>
+              <View style={styles.directoryEmpty}>
+                <Text style={styles.emptyEmoji}>⌖</Text>
+                <Text style={styles.emptyTitle}>No shops found here yet</Text>
+                <Text style={styles.emptyHint}>
+                  Try another district, taluk, or village to discover approved shops.
+                </Text>
               </View>
             )}
           </View>
@@ -998,48 +910,21 @@ export default function HomeScreen() {
                       value={businessFssai}
                     />
                   </View>
-                  <View style={styles.signupField}>
-                    <Text style={styles.signupLabel}>District *</Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Select district${businessDistrict ? `, ${businessDistrict}` : ''}`}
-                      accessibilityState={{ expanded: districtPickerVisible }}
-                      onPress={() => setDistrictPickerVisible((visible) => !visible)}
-                      style={styles.selectField}>
-                      <Text
-                        style={[
-                          styles.selectFieldText,
-                          !businessDistrict && styles.selectFieldPlaceholder,
-                        ]}>
-                        {businessDistrict || 'Choose your Kerala district'}
+                  <View style={styles.signupLocationFields}>
+                    <KeralaLocationSelectors
+                      district={businessDistrict}
+                      taluk={businessTaluk}
+                      village={businessVillage}
+                      locations={locations}
+                      onDistrictChange={setBusinessDistrict}
+                      onTalukChange={setBusinessTaluk}
+                      onVillageChange={setBusinessVillage}
+                      disabled={locationsLoading || Boolean(locationsError)}
+                    />
+                    {locationsError ? (
+                      <Text style={styles.signupMessage}>
+                        Unable to load Kerala locations: {locationsError}
                       </Text>
-                      <Text style={styles.selectChevron}>{districtPickerVisible ? '⌃' : '⌄'}</Text>
-                    </Pressable>
-                    {districtPickerVisible ? (
-                      <View style={styles.districtOptions}>
-                        {keralaDistricts.map((district) => (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: businessDistrict === district }}
-                            key={district}
-                            onPress={() => {
-                              setBusinessDistrict(district);
-                              setDistrictPickerVisible(false);
-                            }}
-                            style={[
-                              styles.districtOption,
-                              businessDistrict === district && styles.districtOptionSelected,
-                            ]}>
-                            <Text
-                              style={[
-                                styles.districtOptionText,
-                                businessDistrict === district && styles.districtOptionTextSelected,
-                              ]}>
-                              {district}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
                     ) : null}
                   </View>
                   <View style={styles.signupField}>
@@ -1293,6 +1178,199 @@ const styles = StyleSheet.create({
     flex: 1,
     maxWidth: 650,
     marginBottom: 0,
+  },
+  directoryIntro: {
+    paddingTop: 16,
+    paddingBottom: 18,
+  },
+  directoryEyebrow: {
+    color: GREEN,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  directoryTitle: {
+    color: DARK_GREEN,
+    fontSize: 25,
+    lineHeight: 33,
+    fontWeight: '800',
+    marginTop: 5,
+  },
+  directorySubtitle: {
+    color: MUTED,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  locationFilters: {
+    width: '100%',
+    flexDirection: 'column',
+    gap: 12,
+    padding: 14,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#e5ece5',
+    borderRadius: 16,
+    backgroundColor: '#f8fbf8',
+  },
+  locationFiltersStacked: {
+    flexDirection: 'column',
+  },
+  locationError: {
+    color: '#a43e37',
+    fontSize: 11,
+  },
+  signupLocationFields: {
+    gap: 8,
+  },
+  filterColumn: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    gap: 6,
+  },
+  filterLabel: {
+    color: '#59685c',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  filterSelect: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#dce6dc',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+  },
+  filterSelectText: {
+    color: '#26392c',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterOptions: {
+    flexGrow: 0,
+    maxHeight: 235,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e1e9e2',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+  },
+  filterOptionsContent: {
+    gap: 2,
+    padding: 6,
+  },
+  filterOption: {
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderRadius: 7,
+  },
+  filterOptionText: {
+    color: '#526155',
+    fontSize: 11,
+  },
+  filterEmpty: {
+    padding: 8,
+    color: MUTED,
+    fontSize: 10,
+  },
+  shopSection: {
+    paddingBottom: 30,
+  },
+  shopSectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 14,
+  },
+  shopCount: {
+    color: MUTED,
+    fontSize: 10,
+    marginTop: 3,
+  },
+  shopGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 14,
+  },
+  shopCard: {
+    minHeight: 176,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e4ebe4',
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    shadowColor: '#18351f',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  shopCardPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
+  },
+  shopCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  shopIcon: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#eaf5e9',
+  },
+  shopIconText: {
+    color: DARK_GREEN,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  businessTypeBadge: {
+    overflow: 'hidden',
+    maxWidth: '70%',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: '#f1f5ef',
+    color: '#526155',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  shopName: {
+    color: '#1e3324',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 14,
+  },
+  shopLocation: {
+    color: '#647166',
+    fontSize: 10,
+    marginTop: 6,
+  },
+  shopCardLink: {
+    color: GREEN,
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 14,
+  },
+  directoryEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 32,
+    borderWidth: 1,
+    borderColor: '#e5ece5',
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
   },
   searchInput: {
     flex: 1,

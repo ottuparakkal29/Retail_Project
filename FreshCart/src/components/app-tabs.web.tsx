@@ -65,8 +65,8 @@ export default function AppTabs() {
               name="dashboard"
               href={dashboardRole === 'admin' ? '/admin' : '/products'}
               asChild>
-              <TabButton label={dashboardRole === 'admin' ? 'Dashboard' : 'Products'}>
-                {dashboardRole === 'admin' ? 'Dashboard' : 'Products'}
+              <TabButton label={dashboardRole === 'admin' ? 'Dashboard' : 'Shop'}>
+                {dashboardRole === 'admin' ? 'Dashboard' : 'Shop'}
               </TabButton>
             </TabTrigger>
           ) : null}
@@ -75,6 +75,7 @@ export default function AppTabs() {
               <TabButton label="Profile">Profile</TabButton>
             </TabTrigger>
           ) : null}
+          <TabTrigger name="shop" href="/shop" style={styles.hiddenTrigger} />
           <TabTrigger name="analytics" href="/analytics" style={styles.hiddenTrigger} />
         </CustomTabList>
       </TabList>
@@ -160,7 +161,7 @@ const tabIcons = {
   Home: '⌂',
   Cart: '🛍',
   Dashboard: '▦',
-  Products: '▣',
+  Shop: '▣',
   Profile: '',
 } as const;
 
