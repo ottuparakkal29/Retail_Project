@@ -39,6 +39,23 @@ type BusinessNotificationRecord = {
   business_profile_id: string;
 };
 
+type BusinessProfileRecord = {
+  id: string;
+  business_name: string | null;
+  business_type: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  license_number: string | null;
+  gstin: string | null;
+  fssai_number: string | null;
+  district: string | null;
+  address: string | null;
+  license_document_path: string | null;
+  created_at: string | null;
+  approval_status: string | null;
+};
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -110,17 +127,12 @@ export default function AdminScreen() {
       }
       setAdminProfileId(profile.id);
 
-      const { data, error } = await supabase
-        .from('business_profiles')
-        .select(
-          'id, business_name, business_type, contact_name, contact_email, contact_phone, license_number, gstin, fssai_number, district, address, license_document_path, created_at, approval_status',
-        )
-        .in('approval_status', ['pending', 'approved'])
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('admin_list_business_profiles');
       if (error) throw error;
 
+      const businessProfiles = (data ?? []) as BusinessProfileRecord[];
       setPartners(
-        (data ?? []).map((business, index) => {
+        businessProfiles.map((business, index) => {
           const company = String(business.business_name || 'Business');
           const initials = company
             .split(/\s+/)

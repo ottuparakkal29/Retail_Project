@@ -13,7 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
+import { KeralaLocationSelectors } from '@/components/kerala-location-selectors';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
+import { useKeralaLocations } from '@/hooks/use-kerala-locations';
 import { supabase } from '@/lib/supabase';
 
 type Category = {
@@ -39,6 +41,10 @@ type Product = {
 type Business = {
   id: string;
   name: string;
+  district: string | null;
+  taluk: string | null;
+  village: string | null;
+  address: string | null;
 };
 
 const GREEN = '#138a39';
@@ -72,11 +78,18 @@ function imageUrl(path: string | null) {
 
 export default function ProductsScreen() {
   const isWide = useResponsiveBreakpoint(850);
+  const { locations, loading: locationsLoading, error: locationsError } =
+    useKeralaLocations();
   const [business, setBusiness] = useState<Business | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [businessDistrict, setBusinessDistrict] = useState('');
+  const [businessTaluk, setBusinessTaluk] = useState('');
+  const [businessVillage, setBusinessVillage] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingLocation, setSavingLocation] = useState(false);
   const [notice, setNotice] = useState('');
   const [noticeIsError, setNoticeIsError] = useState(false);
   const [activeModal, setActiveModal] = useState<'product' | 'category' | null>(null);
@@ -121,7 +134,7 @@ export default function ProductsScreen() {
 
       const { data: businessProfile, error: businessError } = await supabase
         .from('business_profiles')
-        .select('id, business_name')
+        .select('id, business_name, district, taluk, village, address')
         .eq('user_id', profile.id)
         .maybeSingle();
       if (businessError) throw businessError;
@@ -149,7 +162,18 @@ export default function ProductsScreen() {
       if (categoryResult.error) throw categoryResult.error;
       if (productResult.error) throw productResult.error;
 
-      setBusiness({ id: businessProfile.id, name: businessProfile.business_name });
+      setBusiness({
+        id: businessProfile.id,
+        name: businessProfile.business_name,
+        district: businessProfile.district,
+        taluk: businessProfile.taluk,
+        village: businessProfile.village,
+        address: businessProfile.address,
+      });
+      setBusinessDistrict(businessProfile.district ?? '');
+      setBusinessTaluk(businessProfile.taluk ?? '');
+      setBusinessVillage(businessProfile.village ?? '');
+      setBusinessAddress(businessProfile.address ?? '');
       setCategories((categoryResult.data ?? []) as Category[]);
       setProducts((productResult.data ?? []) as Product[]);
     } catch (error) {
@@ -159,6 +183,47 @@ export default function ProductsScreen() {
       setLoading(false);
     }
   }, []);
+
+  async function saveBusinessLocation() {
+    if (!business) return;
+    const locationIsValid = locations.some(
+      (location) =>
+        location.district === businessDistrict &&
+        location.taluk === businessTaluk &&
+        location.village === businessVillage,
+    );
+    if (!locationIsValid) {
+      setNotice('Select a valid district, taluk, and village before saving your location.');
+      setNoticeIsError(true);
+      return;
+    }
+
+    setSavingLocation(true);
+    setNotice('');
+    try {
+      const { error } = await supabase.rpc('update_own_business_location', {
+        p_district: businessDistrict,
+        p_taluk: businessTaluk,
+        p_village: businessVillage,
+        p_address: businessAddress.trim() || null,
+      });
+      if (error) throw error;
+      setBusiness({
+        ...business,
+        district: businessDistrict,
+        taluk: businessTaluk,
+        village: businessVillage,
+        address: businessAddress.trim() || null,
+      });
+      setNotice('Your business location has been updated.');
+      setNoticeIsError(false);
+    } catch (error) {
+      setNotice(errorMessage(error, 'Unable to update your business location.'));
+      setNoticeIsError(true);
+    } finally {
+      setSavingLocation(false);
+    }
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => void loadData(), 0);
@@ -419,6 +484,64 @@ export default function ProductsScreen() {
             <Text style={[styles.noticeText, noticeIsError && styles.noticeErrorText]}>{notice}</Text>
           </View>
         ) : null}
+
+        <View style={styles.businessLocationCard}>
+          <View style={styles.businessLocationHeading}>
+            <View>
+              <Text style={styles.businessLocationTitle}>Business location</Text>
+              <Text style={styles.businessLocationHint}>
+                Help customers find your shop in the directory.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={
+                !business ||
+                savingLocation ||
+                locationsLoading ||
+                Boolean(locationsError)
+              }
+              onPress={() => void saveBusinessLocation()}
+              style={[
+                styles.locationSaveButton,
+                (!business ||
+                  savingLocation ||
+                  locationsLoading ||
+                  Boolean(locationsError)) &&
+                  styles.disabledButton,
+              ]}>
+              <Text style={styles.locationSaveText}>
+                {savingLocation ? 'Saving…' : 'Save location'}
+              </Text>
+            </Pressable>
+          </View>
+          <KeralaLocationSelectors
+            district={businessDistrict}
+            taluk={businessTaluk}
+            village={businessVillage}
+            locations={locations}
+            onDistrictChange={setBusinessDistrict}
+            onTalukChange={setBusinessTaluk}
+            onVillageChange={setBusinessVillage}
+            disabled={locationsLoading || Boolean(locationsError) || savingLocation}
+            direction={isWide ? 'row' : 'column'}
+          />
+          {locationsError ? (
+            <Text style={styles.locationLoadError}>
+              Unable to load Kerala locations: {locationsError}
+            </Text>
+          ) : null}
+          <Text style={styles.locationFieldLabel}>Street address</Text>
+          <TextInput
+            accessibilityLabel="Business street address"
+            multiline
+            onChangeText={setBusinessAddress}
+            placeholder="Street, building, or landmark"
+            placeholderTextColor="#8b958d"
+            style={[styles.locationInput, styles.locationAddressInput]}
+            value={businessAddress}
+          />
+        </View>
 
         <View style={styles.metrics}>
           <Metric label="Products listed" value={loading ? '—' : String(products.length)} icon="▣" />
@@ -780,6 +903,16 @@ const styles = StyleSheet.create({
   noticeError: { backgroundColor: '#fff0ed', borderColor: '#f2d1ca' },
   noticeText: { color: '#276b38', fontSize: 12, lineHeight: 18 },
   noticeErrorText: { color: '#a34232' },
+  businessLocationCard: { gap: 12, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e5ece3', backgroundColor: '#fff' },
+  businessLocationHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  businessLocationTitle: { color: DARK, fontSize: 14, fontWeight: '800' },
+  businessLocationHint: { color: MUTED, fontSize: 10, marginTop: 3 },
+  locationSaveButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 9, backgroundColor: GREEN },
+  locationSaveText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  locationFieldLabel: { color: '#425446', fontSize: 10, fontWeight: '700' },
+  locationInput: { minHeight: 42, borderWidth: 1, borderColor: '#e1e9e0', backgroundColor: '#fcfdfb', borderRadius: 10, paddingHorizontal: 11, color: DARK, fontSize: 11 },
+  locationAddressInput: { minHeight: 62, paddingTop: 10, textAlignVertical: 'top' },
+  locationLoadError: { color: '#a43e37', fontSize: 10 },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   metricCard: { flexGrow: 1, flexBasis: '45%', minWidth: 135, backgroundColor: '#fff', padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#e9eee7', gap: 3 },
   metricIcon: { width: 29, height: 29, borderRadius: 10, backgroundColor: '#eaf6eb', alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
