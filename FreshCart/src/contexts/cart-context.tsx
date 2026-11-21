@@ -61,7 +61,7 @@ function getErrorMessage(error: unknown) {
 
 function getImageUrl(path: string | null) {
   return path
-    ? supabase.storage.from('product-media').getPublicUrl(path).data.publicUrl
+    ? supabase.storage.from('product-images').getPublicUrl(path).data.publicUrl
     : null;
 }
 

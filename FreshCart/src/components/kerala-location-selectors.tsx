@@ -92,7 +92,12 @@ export function KeralaLocationSelectors({
     const placeholder = includeAllOptions ? allLabel : selectPlaceholder;
 
     return (
-      <View key={level} style={styles.field}>
+      <View
+        key={level}
+        style={[
+          styles.field,
+          direction === 'row' ? styles.fieldRow : styles.fieldColumn,
+        ]}>
         <Text style={styles.label}>{levelLabels[level]}{!includeAllOptions ? ' *' : ''}</Text>
         <Pressable
           accessibilityRole="button"
@@ -183,10 +188,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   field: {
-    flex: 1,
-    flexBasis: 0,
     minWidth: 0,
     gap: 6,
+  },
+  fieldRow: {
+    flex: 1,
+    flexBasis: 0,
+  },
+  fieldColumn: {
+    width: '100%',
   },
   label: {
     color: '#59685c',
