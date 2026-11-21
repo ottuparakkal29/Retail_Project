@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -16,26 +16,23 @@ type Shop = {
   district: string | null;
   taluk: string | null;
   village: string | null;
-  address: string | null;
-  contact_name: string | null;
-  contact_email: string | null;
-  contact_phone: string | null;
 };
 
 type Category = {
   id: string;
   name: string;
+  image_path: string | null;
 };
 
 type Product = {
   id: string;
   name: string;
-  description: string | null;
   price: number;
   unit: string;
   stock_quantity: number;
   image_path: string | null;
   category_id: string;
+  compare_at_price: number | null;
 };
 
 const GREEN = '#138a39';
@@ -52,14 +49,23 @@ function errorMessage(error: unknown) {
 
 function imageUrl(path: string | null) {
   return path
-    ? supabase.storage.from('product-media').getPublicUrl(path).data.publicUrl
+    ? supabase.storage.from('product-images').getPublicUrl(path).data.publicUrl
+    : null;
+}
+
+function categoryImageUrl(path: string | null) {
+  return path
+    ? supabase.storage.from('category-images').getPublicUrl(path).data.publicUrl
     : null;
 }
 
 export default function ShopStorefrontScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const isWide = useResponsiveBreakpoint(850);
+  const isWide = useResponsiveBreakpoint(1200);
+  const isTablet = useResponsiveBreakpoint(700);
   const { addItem, error: cartError, dismissError } = useCart();
+  const scrollRef = useRef<ScrollView>(null);
+  const catalogOffset = useRef(0);
   const [shop, setShop] = useState<Shop | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -82,7 +88,7 @@ export default function ShopStorefrontScreen() {
       const { data: shopData, error: shopError } = await supabase
         .from('business_profiles')
         .select(
-          'id, business_name, business_type, district, taluk, village, address, contact_name, contact_email, contact_phone',
+          'id, business_name, business_type, district, taluk, village',
         )
         .eq('id', id)
         .eq('approval_status', 'approved')
@@ -99,7 +105,7 @@ export default function ShopStorefrontScreen() {
 
       const { data: productData, error: productError } = await supabase
         .from('products')
-        .select('id, name, description, price, unit, stock_quantity, image_path, category_id')
+        .select('id, name, price, compare_at_price, unit, stock_quantity, image_path, category_id')
         .eq('business_id', shopData.id)
         .eq('is_active', true)
         .order('name');
@@ -110,7 +116,7 @@ export default function ShopStorefrontScreen() {
       const { data: categoryData, error: categoryError } = categoryIds.length
         ? await supabase
             .from('categories')
-            .select('id, name')
+            .select('id, name, image_path')
             .eq('is_active', true)
             .in('id', categoryIds)
             .order('name')
@@ -144,11 +150,6 @@ export default function ShopStorefrontScreen() {
       ),
     [products, selectedCategory],
   );
-  const categoryNameById = useMemo(
-    () => new Map(categories.map((category) => [category.id, category.name])),
-    [categories],
-  );
-
   async function addProductToCart(product: Product) {
     dismissError();
     const image = imageUrl(product.image_path);
@@ -169,24 +170,11 @@ export default function ShopStorefrontScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.page}
+        showsVerticalScrollIndicator={false}>
         <View style={[styles.content, isWide && styles.contentWide]}>
-          <View style={styles.topbar}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.back()}
-              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-              <Text style={styles.backText}>‹</Text>
-              <Text style={styles.backLabel}>Back to shops</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push('/cart')}
-              style={({ pressed }) => [styles.cartButton, pressed && styles.pressed]}>
-              <Text style={styles.cartButtonText}>Cart</Text>
-            </Pressable>
-          </View>
-
           {loading ? (
             <View style={styles.stateCard}>
               <Text style={styles.stateTitle}>Opening shop…</Text>
@@ -211,63 +199,82 @@ export default function ShopStorefrontScreen() {
             </View>
           ) : (
             <>
-              <View style={styles.shopBanner}>
-                <View style={styles.shopMark}>
-                  <Text style={styles.shopMarkText}>
-                    {shop.business_name.slice(0, 1).toUpperCase()}
+              <View style={[styles.shopHero, isWide && styles.shopHeroWide]}>
+                <View style={styles.heroCopy}>
+                  <Text style={styles.eyebrow}>FRESHCART · SHOP LOCAL</Text>
+                  <Text style={styles.heroTitle}>{shop.business_name}</Text>
+                  <Text style={styles.heroSubtitle}>
+                    Fresh picks and everyday essentials, from your neighborhood shop.
                   </Text>
+                  <View style={styles.heroDetails}>
+                    <View style={styles.typeBadge}>
+                      <Text style={styles.typeBadgeText}>
+                        {shop.business_type || 'Business'}
+                      </Text>
+                    </View>
+                    <Text numberOfLines={1} style={styles.shopLocation}>
+                      ⌖ {[shop.village, shop.taluk, shop.district].filter(Boolean).join(', ') ||
+                        'Location not listed'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setSelectedCategory('all');
+                      scrollRef.current?.scrollTo({
+                        y: catalogOffset.current + 20,
+                        animated: true,
+                      });
+                    }}
+                    style={({ pressed }) => [
+                      styles.heroButton,
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text style={styles.heroButtonText}>Shop this store →</Text>
+                  </Pressable>
                 </View>
-                <Text style={styles.eyebrow}>FRESHCART SHOP</Text>
-                <Text style={styles.shopName}>{shop.business_name}</Text>
-                <View style={styles.typeBadge}>
-                  <Text style={styles.typeBadgeText}>{shop.business_type || 'Business'}</Text>
-                </View>
-                <View style={styles.shopDetails}>
-                  <Text style={styles.shopDetailLine}>
-                    ⌖ {[shop.address, shop.village, shop.taluk, shop.district].filter(Boolean).join(', ') ||
-                      'Location not provided'}
-                  </Text>
-                  {shop.contact_name ? (
-                    <Text style={styles.shopDetailLine}>Contact: {shop.contact_name}</Text>
-                  ) : null}
-                  {shop.contact_phone ? (
-                    <Text style={styles.shopDetailLine}>Phone: {shop.contact_phone}</Text>
-                  ) : null}
-                  {shop.contact_email ? (
-                    <Text style={styles.shopDetailLine}>Email: {shop.contact_email}</Text>
-                  ) : null}
-                </View>
-              </View>
-
-              <View style={styles.catalogHeader}>
-                <View>
-                  <Text style={styles.catalogTitle}>Shop</Text>
-                  <Text style={styles.catalogSubtitle}>
-                    {products.length} active {products.length === 1 ? 'product' : 'products'}
-                  </Text>
-                </View>
+                <Image
+                  accessibilityLabel="Fresh greens"
+                  source={require('../../assets/images/store/hero-produce.jpg')}
+                  contentFit="cover"
+                  style={styles.heroImage}
+                />
               </View>
 
               {categories.length ? (
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryChips}>
-                  <CategoryChip
-                    label="All"
+                  contentContainerStyle={styles.categoryTiles}>
+                  <CategoryTile
+                    label="All products"
                     selected={selectedCategory === 'all'}
                     onPress={() => setSelectedCategory('all')}
                   />
                   {categories.map((category) => (
-                    <CategoryChip
+                    <CategoryTile
                       key={category.id}
                       label={category.name}
+                      image={categoryImageUrl(category.image_path)}
                       selected={selectedCategory === category.id}
                       onPress={() => setSelectedCategory(category.id)}
                     />
                   ))}
                 </ScrollView>
               ) : null}
+
+              <View
+                onLayout={(event) => {
+                  catalogOffset.current = event.nativeEvent.layout.y;
+                }}
+                style={styles.catalogHeader}>
+                <View>
+                  <Text style={styles.catalogTitle}>Popular Products</Text>
+                  <Text style={styles.catalogSubtitle}>
+                    {products.length} active {products.length === 1 ? 'product' : 'products'}
+                  </Text>
+                </View>
+              </View>
 
               {cartError ? (
                 <Pressable
@@ -288,7 +295,9 @@ export default function ShopStorefrontScreen() {
                         key={product.id}
                         style={[
                           styles.productCard,
-                          { flexBasis: isWide ? '31%' : '47%' },
+                          {
+                            flexBasis: isWide ? '15.8%' : isTablet ? '23.8%' : '47.8%',
+                          },
                         ]}>
                         {image ? (
                           <Image
@@ -302,33 +311,49 @@ export default function ShopStorefrontScreen() {
                             <Text style={styles.imagePlaceholderText}>✳</Text>
                           </View>
                         )}
+                        {product.compare_at_price != null &&
+                        Number(product.compare_at_price) > Number(product.price) ? (
+                          <View style={styles.discountBadge}>
+                            <Text style={styles.discountText}>
+                              {Math.round(
+                                (1 - Number(product.price) / Number(product.compare_at_price)) *
+                                  100,
+                              )}% OFF
+                            </Text>
+                          </View>
+                        ) : null}
                         <View style={styles.productInfo}>
-                          <Text style={styles.productCategory}>
-                            {categoryNameById.get(product.category_id) ?? 'Shop product'}
-                          </Text>
                           <Text numberOfLines={2} style={styles.productName}>{product.name}</Text>
-                          {product.description ? (
-                            <Text numberOfLines={2} style={styles.productDescription}>
-                              {product.description}
-                            </Text>
-                          ) : null}
-                          <Text style={styles.productPrice}>
-                            ₹{Number(product.price).toLocaleString('en-IN', {
-                              maximumFractionDigits: 2,
-                            })} <Text style={styles.productUnit}>/ {product.unit}</Text>
-                          </Text>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`Add ${product.name} to cart`}
-                            onPress={() => void addProductToCart(product)}
-                            style={({ pressed }) => [
-                              styles.addButton,
-                              pressed && styles.pressed,
-                            ]}>
-                            <Text style={styles.addButtonText}>
-                              {addedProductId === product.id ? 'Added ✓' : 'Add to cart +'}
-                            </Text>
-                          </Pressable>
+                          <Text style={styles.productUnit}>{product.unit}</Text>
+                          <View style={[styles.productFooter, !isTablet && styles.productFooterStacked]}>
+                            <View style={styles.priceGroup}>
+                              <Text style={styles.productPrice}>
+                                ₹{Number(product.price).toLocaleString('en-IN', {
+                                  maximumFractionDigits: 2,
+                                })}
+                              </Text>
+                              {product.compare_at_price != null &&
+                              Number(product.compare_at_price) > Number(product.price) ? (
+                                <Text style={styles.comparePrice}>
+                                  ₹{Number(product.compare_at_price).toLocaleString('en-IN', {
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </Text>
+                              ) : null}
+                            </View>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Add ${product.name} to cart`}
+                              onPress={() => void addProductToCart(product)}
+                              style={({ pressed }) => [
+                                styles.addButton,
+                                pressed && styles.pressed,
+                              ]}>
+                              <Text style={styles.addButtonText}>
+                                {addedProductId === product.id ? 'Added ✓' : 'Add to cart +'}
+                              </Text>
+                            </Pressable>
+                          </View>
                         </View>
                       </View>
                     );
@@ -354,11 +379,13 @@ export default function ShopStorefrontScreen() {
   );
 }
 
-function CategoryChip({
+function CategoryTile({
+  image,
   label,
   onPress,
   selected,
 }: {
+  image?: string | null;
   label: string;
   onPress: () => void;
   selected: boolean;
@@ -368,10 +395,15 @@ function CategoryChip({
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}
-      style={[styles.categoryChip, selected && styles.categoryChipSelected]}>
-      <Text style={[styles.categoryChipText, selected && styles.categoryChipTextSelected]}>
-        {label}
-      </Text>
+      style={[styles.categoryTile, selected && styles.categoryTileSelected]}>
+      {image ? (
+        <Image source={{ uri: image }} contentFit="cover" style={styles.categoryImage} />
+      ) : (
+        <View style={[styles.categoryImage, styles.categoryImageFallback]}>
+          <Text style={styles.categoryFallbackText}>✳</Text>
+        </View>
+      )}
+      <Text numberOfLines={1} style={styles.categoryTileText}>{label}</Text>
     </Pressable>
   );
 }
@@ -379,12 +411,13 @@ function CategoryChip({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f6f9f6',
+    backgroundColor: '#ffffff',
   },
   page: {
     flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: 16,
+    paddingTop: 20,
     paddingBottom: 44,
   },
   content: {
@@ -392,65 +425,73 @@ const styles = StyleSheet.create({
     maxWidth: 760,
   },
   contentWide: {
-    maxWidth: 1180,
+    maxWidth: 1440,
   },
-  topbar: {
-    minHeight: 62,
+  shopHero: {
+    overflow: 'hidden',
+    gap: 18,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: '#e7f7c6',
+  },
+  shopHeroWide: {
+    minHeight: 250,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 44,
+    paddingVertical: 28,
   },
-  backButton: {
+  heroCopy: {
+    flex: 1,
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  heroTitle: {
+    maxWidth: 620,
+    color: '#143e25',
+    fontSize: 30,
+    lineHeight: 38,
+    fontWeight: '900',
+  },
+  heroSubtitle: {
+    maxWidth: 540,
+    color: '#304c36',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  heroDetails: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingVertical: 8,
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 1,
   },
-  backText: {
-    color: DARK_GREEN,
-    fontSize: 24,
-    lineHeight: 28,
+  heroImage: {
+    width: '100%',
+    height: 145,
+    borderRadius: 15,
+    backgroundColor: '#d8e9c2',
   },
-  backLabel: {
-    color: DARK_GREEN,
+  heroButton: {
+    minHeight: 42,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    marginTop: 5,
+    borderRadius: 24,
+    backgroundColor: GREEN,
+  },
+  heroButtonText: {
+    color: '#ffffff',
     fontSize: 11,
     fontWeight: '700',
   },
-  cartButton: {
-    minHeight: 36,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    backgroundColor: '#eaf5e9',
+  pressed: {
+    opacity: 0.78,
   },
-  cartButtonText: {
-    color: DARK_GREEN,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  shopBanner: {
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 24,
-    borderRadius: 22,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e4ebe4',
-  },
-  shopMark: {
-    width: 58,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    borderRadius: 20,
-    backgroundColor: '#eaf5e9',
-  },
-  shopMarkText: {
-    color: DARK_GREEN,
-    fontSize: 24,
-    fontWeight: '800',
+  shopLocation: {
+    color: '#526456',
+    fontSize: 10,
   },
   eyebrow: {
     color: GREEN,
@@ -458,41 +499,24 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
   },
-  shopName: {
-    color: '#18351f',
-    fontSize: 24,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 4,
-  },
   typeBadge: {
     paddingHorizontal: 11,
-    paddingVertical: 5,
-    marginTop: 9,
+    paddingVertical: 4,
     borderRadius: 20,
     backgroundColor: '#f1f5ef',
+    flexShrink: 0,
   },
   typeBadgeText: {
     color: '#526155',
     fontSize: 10,
     fontWeight: '700',
   },
-  shopDetails: {
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 15,
-  },
-  shopDetailLine: {
-    color: '#617064',
-    fontSize: 10,
-    textAlign: 'center',
-  },
   catalogHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 27,
-    marginBottom: 14,
+    marginTop: 8,
+    marginBottom: 16,
   },
   catalogTitle: {
     color: '#18351f',
@@ -504,30 +528,46 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 3,
   },
-  categoryChips: {
-    gap: 8,
-    paddingBottom: 16,
+  categoryTiles: {
+    gap: 11,
+    paddingTop: 16,
+    paddingBottom: 18,
   },
-  categoryChip: {
-    minHeight: 34,
+  categoryTile: {
+    width: 102,
+    minHeight: 100,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 13,
+    gap: 6,
+    padding: 8,
     borderWidth: 1,
-    borderColor: '#dce6dc',
-    borderRadius: 18,
-    backgroundColor: '#ffffff',
+    borderColor: '#edf2ec',
+    borderRadius: 14,
+    backgroundColor: '#f3f8f2',
   },
-  categoryChipSelected: {
-    borderColor: GREEN,
+  categoryTileSelected: {
+    borderColor: '#b5d8b8',
     backgroundColor: '#eaf5e9',
   },
-  categoryChipText: {
-    color: '#667367',
-    fontSize: 10,
-    fontWeight: '600',
+  categoryImage: {
+    width: 58,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: '#e5eee3',
   },
-  categoryChipTextSelected: {
-    color: DARK_GREEN,
+  categoryImageFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryFallbackText: {
+    color: '#80a17f',
+    fontSize: 23,
+  },
+  categoryTileText: {
+    maxWidth: 86,
+    color: '#334438',
+    fontSize: 9,
+    fontWeight: '700',
   },
   errorNotice: {
     flexDirection: 'row',
