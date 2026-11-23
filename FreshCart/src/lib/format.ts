@@ -14,3 +14,15 @@ export function formatCurrency(value: number) {
 export function formatQuantity(value: number) {
   return String(Number(value.toFixed(3)));
 }
+
+export function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

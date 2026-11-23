@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
+import { BusinessNavTabs } from '@/components/business-nav-tabs';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { supabase } from '@/lib/supabase';
 
@@ -339,7 +340,12 @@ export default function ProductsScreen() {
               </View>
               <View style={styles.sidebarMenu}>
                 <SidebarItem icon="⌂" label="Dashboard" onPress={() => {}} />
-                <SidebarItem icon="▣" label="Products" onPress={() => {}} />
+                <SidebarItem active icon="▣" label="Products" onPress={() => {}} />
+                <SidebarItem
+                  icon="🧾"
+                  label="Incoming orders"
+                  onPress={() => router.replace('/incoming-orders')}
+                />
               </View>
             </View>
             <View style={styles.sidebarBottom}>
@@ -376,6 +382,8 @@ export default function ProductsScreen() {
               <Text style={styles.storeLinkText}>← Storefront</Text>
             </Pressable>
           </View>
+
+          {!isWide ? <BusinessNavTabs active="products" /> : null}
 
         <View style={styles.headingRow}>
           <View style={styles.headingCopy}>

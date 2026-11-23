@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useCart, type CartProduct } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { supabase } from '@/lib/supabase';
@@ -75,6 +76,8 @@ export default function ShopStorefrontScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [addedProductId, setAddedProductId] = useState('');
+  const [conflictProduct, setConflictProduct] = useState<CartProduct | null>(null);
+  const [replacingCart, setReplacingCart] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -162,21 +165,37 @@ export default function ShopStorefrontScreen() {
   }
 
   async function addProductToCart(product: Product) {
+    if (!shop) return;
     dismissError();
-    const image = imageUrl(product.image_path);
     const cartProduct: CartProduct = {
       id: product.id,
       name: product.name,
-      detail: product.unit,
+      unit: product.unit,
       price: Number(product.price),
-      image,
+      stock: product.stock_quantity == null ? null : Number(product.stock_quantity),
+      image: imageUrl(product.image_path),
+      businessId: shop.id,
     };
-    if (await addItem(cartProduct)) {
-      setAddedProductId(product.id);
-      setTimeout(() => setAddedProductId((current) =>
-        current === product.id ? '' : current,
-      ), 1800);
+    const result = await addItem(cartProduct);
+    if (result === 'shop-conflict') setConflictProduct(cartProduct);
+    else if (result === 'ok') showAdded(product.id);
+  }
+
+  async function replaceCartWith(product: CartProduct) {
+    setReplacingCart(true);
+    try {
+      if ((await addItem(product, { replaceCart: true })) === 'ok') showAdded(product.id);
+    } finally {
+      setReplacingCart(false);
+      setConflictProduct(null);
     }
+  }
+
+  function showAdded(productId: string) {
+    setAddedProductId(productId);
+    setTimeout(() => setAddedProductId((current) =>
+      current === productId ? '' : current,
+    ), 1800);
   }
 
   return (
@@ -414,6 +433,18 @@ export default function ShopStorefrontScreen() {
           )}
         </View>
       </ScrollView>
+      <ConfirmDialog
+        confirmLabel="Start new cart"
+        destructive
+        loading={replacingCart}
+        message={`Your cart already has items from another shop. Adding ${
+          conflictProduct?.name ?? 'this item'
+        } will clear it and start a new cart with this shop.`}
+        onCancel={() => setConflictProduct(null)}
+        onConfirm={() => conflictProduct && void replaceCartWith(conflictProduct)}
+        title="Start a new cart?"
+        visible={conflictProduct !== null}
+      />
     </SafeAreaView>
   );
 }

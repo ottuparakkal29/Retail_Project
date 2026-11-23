@@ -54,6 +54,9 @@ export default function Navbar() {
     { label: 'Categories', selected: false, onPress: () => showHome(true) },
     { label: 'Offers', selected: false, onPress: () => showHome(true) },
     { label: 'Cart', selected: pathname === '/cart', onPress: () => router.push('/cart') },
+    ...(authenticated && !dashboardRole
+      ? [{ label: 'My Orders', selected: pathname === '/orders', onPress: () => router.push('/orders') }]
+      : []),
     {
       label: 'Profile',
       selected: pathname === '/profile',
@@ -68,6 +71,13 @@ export default function Navbar() {
       label: dashboardRole === 'admin' ? 'Dashboard' : 'Business Studio',
       selected: pathname === '/admin' || pathname === '/analytics' || pathname === '/products',
       onPress: () => router.push(dashboardRole === 'admin' ? '/admin' : '/products'),
+    });
+  }
+  if (dashboardRole === 'business') {
+    links.push({
+      label: 'Incoming Orders',
+      selected: pathname === '/incoming-orders',
+      onPress: () => router.push('/incoming-orders'),
     });
   }
 

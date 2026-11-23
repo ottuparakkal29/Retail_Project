@@ -245,6 +245,20 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
+              {account && account.role !== 'admin' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    router.push(account.role === 'business' ? '/incoming-orders' : '/orders')
+                  }
+                  style={({ pressed }) => [styles.shopButton, pressed && styles.pressed]}>
+                  <Text style={styles.shopButtonText}>
+                    {account.role === 'business' ? 'Incoming orders' : 'My orders'}
+                  </Text>
+                  <Text style={styles.shopButtonArrow}>→</Text>
+                </Pressable>
+              ) : null}
+
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.push('/')}
