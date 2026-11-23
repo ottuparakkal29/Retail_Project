@@ -113,7 +113,14 @@ export function KeralaLocationSelectors({
           <Text numberOfLines={1} style={value ? styles.value : styles.placeholder}>
             {value || placeholder}
           </Text>
-          <Text style={styles.chevron}>{isOpen ? '⌃' : '⌄'}</Text>
+          <View style={styles.chevronContainer}>
+            <Text
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+              style={[styles.chevron, isOpen && styles.chevronOpen]}>
+              ▾
+            </Text>
+          </View>
         </Pressable>
         {isOpen ? (
           <ScrollView
@@ -202,6 +209,7 @@ const styles = StyleSheet.create({
     color: '#59685c',
     fontSize: 10,
     fontWeight: '700',
+    marginLeft: 8,
   },
   select: {
     minHeight: 44,
@@ -212,7 +220,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#dce6dc',
-    borderRadius: 10,
+    borderRadius: 18,
     backgroundColor: '#ffffff',
   },
   selectDisabled: {
@@ -230,9 +238,20 @@ const styles = StyleSheet.create({
     color: '#7c887e',
     fontSize: 12,
   },
+  chevronContainer: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chevron: {
     color: '#647166',
-    fontSize: 16,
+    fontSize: 18,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  chevronOpen: {
+    transform: [{ rotate: '180deg' }],
   },
   options: {
     flexGrow: 0,

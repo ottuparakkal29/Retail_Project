@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
@@ -63,13 +63,15 @@ export default function ShopStorefrontScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const isWide = useResponsiveBreakpoint(1200);
   const isTablet = useResponsiveBreakpoint(700);
+  const isDesktop = useResponsiveBreakpoint(760);
   const { addItem, error: cartError, dismissError } = useCart();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const catalogOffset = useRef(0);
   const [shop, setShop] = useState<Shop | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [addedProductId, setAddedProductId] = useState('');
@@ -85,6 +87,8 @@ export default function ShopStorefrontScreen() {
 
       setLoading(true);
       setLoadError('');
+      setSelectedCategory('all');
+      setQuery('');
       const { data: shopData, error: shopError } = await supabase
         .from('business_profiles')
         .select(
@@ -143,13 +147,20 @@ export default function ShopStorefrontScreen() {
   }, [id]);
 
   const visibleProducts = useMemo(
-    () =>
-      products.filter(
+    () => {
+      const search = query.trim().toLowerCase();
+      return products.filter(
         (product) =>
-          selectedCategory === 'all' || product.category_id === selectedCategory,
-      ),
-    [products, selectedCategory],
+          (selectedCategory === 'all' || product.category_id === selectedCategory) &&
+          product.name.toLowerCase().includes(search),
+      );
+    },
+    [products, selectedCategory, query],
   );
+  function showProducts() {
+    scrollRef.current?.scrollTo({ y: catalogOffset.current, animated: true });
+  }
+
   async function addProductToCart(product: Product) {
     dismissError();
     const image = imageUrl(product.image_path);
@@ -169,12 +180,12 @@ export default function ShopStorefrontScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.page}
+        contentContainerStyle={[styles.page, { paddingBottom: isDesktop ? 36 : 100 }]}
         showsVerticalScrollIndicator={false}>
-        <View style={[styles.content, isWide && styles.contentWide]}>
+        <View style={styles.content}>
           {loading ? (
             <View style={styles.stateCard}>
               <Text style={styles.stateTitle}>Opening shop…</Text>
@@ -199,12 +210,16 @@ export default function ShopStorefrontScreen() {
             </View>
           ) : (
             <>
-              <View style={[styles.shopHero, isWide && styles.shopHeroWide]}>
-                <View style={styles.heroCopy}>
-                  <Text style={styles.eyebrow}>FRESHCART · SHOP LOCAL</Text>
-                  <Text style={styles.heroTitle}>{shop.business_name}</Text>
+              <View style={[styles.shopHero, isDesktop && styles.shopHeroWide]}>
+                <View pointerEvents="none" style={styles.heroCircleLarge} />
+                <View pointerEvents="none" style={styles.heroCircleSmall} />
+                <View style={[styles.heroCopy, isDesktop && styles.heroCopyWide]}>
+                  <Text style={styles.eyebrow}>✦  YOUR LOCAL STOREFRONT</Text>
+                  <Text numberOfLines={2} style={[styles.heroTitle, isDesktop && styles.heroTitleWide]}>
+                    {shop.business_name}
+                  </Text>
                   <Text style={styles.heroSubtitle}>
-                    Fresh picks and everyday essentials, from your neighborhood shop.
+                    Discover products from this FreshCart business.
                   </Text>
                   <View style={styles.heroDetails}>
                     <View style={styles.typeBadge}>
@@ -221,10 +236,8 @@ export default function ShopStorefrontScreen() {
                     accessibilityRole="button"
                     onPress={() => {
                       setSelectedCategory('all');
-                      scrollRef.current?.scrollTo({
-                        y: catalogOffset.current + 20,
-                        animated: true,
-                      });
+                      setQuery('');
+                      showProducts();
                     }}
                     style={({ pressed }) => [
                       styles.heroButton,
@@ -233,14 +246,40 @@ export default function ShopStorefrontScreen() {
                     <Text style={styles.heroButtonText}>Shop this store →</Text>
                   </Pressable>
                 </View>
-                <Image
-                  accessibilityLabel="Fresh greens"
-                  source={require('../../assets/images/store/hero-produce.jpg')}
-                  contentFit="cover"
-                  style={styles.heroImage}
-                />
+                {isDesktop ? (
+                  <View
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    pointerEvents="none"
+                    style={styles.heroIdentity}>
+                    <View style={styles.heroIdentityIcon}>
+                      <Text style={styles.heroIdentityInitial}>
+                        {shop.business_name.trim().slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.heroIdentityLabel}>LOCAL BUSINESS</Text>
+                    <Text numberOfLines={1} style={styles.heroIdentityName}>
+                      {shop.business_name}
+                    </Text>
+                    <View style={styles.heroIdentityDivider} />
+                    <Text style={styles.heroIdentityCount}>
+                      {products.length} {products.length === 1 ? 'product' : 'products'} to explore
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
+              <View style={styles.searchBar}>
+                <TextInput
+                  accessibilityLabel="Search this shop's products"
+                  placeholder="Search products in this shop..."
+                  placeholderTextColor="#8b958d"
+                  value={query}
+                  onChangeText={setQuery}
+                  style={styles.searchInput}
+                />
+                <Text style={styles.searchIcon}>⌕</Text>
+              </View>
               {categories.length ? (
                 <ScrollView
                   horizontal
@@ -269,7 +308,7 @@ export default function ShopStorefrontScreen() {
                 }}
                 style={styles.catalogHeader}>
                 <View>
-                  <Text style={styles.catalogTitle}>Popular Products</Text>
+                  <Text style={styles.catalogTitle}>Shop products</Text>
                   <Text style={styles.catalogSubtitle}>
                     {products.length} active {products.length === 1 ? 'product' : 'products'}
                   </Text>
@@ -296,7 +335,7 @@ export default function ShopStorefrontScreen() {
                         style={[
                           styles.productCard,
                           {
-                            flexBasis: isWide ? '15.8%' : isTablet ? '23.8%' : '47.8%',
+                            flexBasis: isWide ? '15.6%' : isTablet ? '23.4%' : '47%',
                           },
                         ]}>
                         {image ? (
@@ -362,11 +401,11 @@ export default function ShopStorefrontScreen() {
               ) : (
                 <View style={styles.stateCard}>
                   <Text style={styles.stateTitle}>
-                    {products.length ? 'No products in this category' : 'No products available yet'}
+                    {products.length ? 'No matching products' : 'No products available yet'}
                   </Text>
                   <Text style={styles.stateDetail}>
                     {products.length
-                      ? 'Choose another category to view this shop’s products.'
+                      ? 'Try another search or category to view this shop’s products.'
                       : 'This shop has not listed active products yet.'}
                   </Text>
                 </View>
@@ -411,80 +450,155 @@ function CategoryTile({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fbfcfb',
   },
   page: {
     flexGrow: 1,
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 44,
   },
   content: {
     width: '100%',
-    maxWidth: 760,
-  },
-  contentWide: {
-    maxWidth: 1440,
+    maxWidth: 1320,
+    paddingHorizontal: 20,
   },
   shopHero: {
+    minHeight: 300,
+    marginTop: 8,
+    marginBottom: 18,
     overflow: 'hidden',
-    gap: 18,
-    padding: 20,
     borderRadius: 20,
-    backgroundColor: '#e7f7c6',
+    backgroundColor: '#eaf5e7',
+    borderWidth: 1,
+    borderColor: '#dfedda',
   },
   shopHeroWide: {
-    minHeight: 250,
+    minHeight: 288,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 44,
-    paddingVertical: 28,
+    paddingRight: 70,
   },
   heroCopy: {
-    flex: 1,
+    width: '100%',
     alignItems: 'flex-start',
-    gap: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+  },
+  heroCopyWide: {
+    flex: 1,
+    maxWidth: 640,
+    paddingLeft: 38,
+    paddingRight: 24,
   },
   heroTitle: {
-    maxWidth: 620,
-    color: '#143e25',
+    color: '#062e1b',
     fontSize: 30,
-    lineHeight: 38,
-    fontWeight: '900',
+    lineHeight: 36,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  heroTitleWide: {
+    fontSize: 38,
+    lineHeight: 44,
   },
   heroSubtitle: {
-    maxWidth: 540,
-    color: '#304c36',
+    maxWidth: 430,
+    color: '#46594b',
     fontSize: 13,
     lineHeight: 20,
+    marginTop: 8,
   },
   heroDetails: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 10,
-    marginTop: 1,
+    marginTop: 8,
   },
-  heroImage: {
+  heroCircleLarge: {
+    position: 'absolute',
+    width: 430,
+    height: 430,
+    top: -150,
+    right: -100,
+    borderRadius: 215,
+    backgroundColor: '#d3eacc',
+  },
+  heroCircleSmall: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    bottom: -155,
+    right: 180,
+    borderRadius: 120,
+    backgroundColor: '#dcefd4',
+  },
+  heroIdentity: {
+    width: 220,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    backgroundColor: '#f9fdf7',
+    shadowColor: '#1e562c',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+  heroIdentityIcon: {
+    width: 68,
+    height: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    backgroundColor: '#dcefd8',
+  },
+  heroIdentityInitial: {
+    color: DARK_GREEN,
+    fontSize: 30,
+    fontWeight: '800',
+  },
+  heroIdentityLabel: {
+    marginTop: 12,
+    color: GREEN,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  heroIdentityName: {
     width: '100%',
-    height: 145,
-    borderRadius: 15,
-    backgroundColor: '#d8e9c2',
+    marginTop: 5,
+    color: '#173a24',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  heroIdentityDivider: {
+    width: 42,
+    height: 1,
+    marginVertical: 10,
+    backgroundColor: '#cde4c8',
+  },
+  heroIdentityCount: {
+    color: '#6c806e',
+    fontSize: 10,
   },
   heroButton: {
-    minHeight: 42,
+    minHeight: 46,
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    marginTop: 5,
+    paddingHorizontal: 20,
+    marginTop: 18,
     borderRadius: 24,
     backgroundColor: GREEN,
   },
   heroButtonText: {
     color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
   },
   pressed: {
     opacity: 0.78,
@@ -495,9 +609,9 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     color: GREEN,
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 1.4,
   },
   typeBadge: {
     paddingHorizontal: 11,
@@ -510,6 +624,27 @@ const styles = StyleSheet.create({
     color: '#526155',
     fontSize: 10,
     fontWeight: '700',
+  },
+  searchBar: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dce4dd',
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 17,
+    marginBottom: 4,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    color: '#26392c',
+    fontSize: 12,
+  },
+  searchIcon: {
+    color: GREEN,
+    fontSize: 24,
   },
   catalogHeader: {
     flexDirection: 'row',
@@ -596,6 +731,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   productCard: {
+    position: 'relative',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#e4ebe4',
@@ -604,8 +740,22 @@ const styles = StyleSheet.create({
   },
   productImage: {
     width: '100%',
-    aspectRatio: 1.45,
+    aspectRatio: 1.2,
     backgroundColor: '#edf3ed',
+  },
+  discountBadge: {
+    position: 'absolute',
+    top: 9,
+    right: 9,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: GREEN,
+  },
+  discountText: {
+    color: '#ffffff',
+    fontSize: 8,
+    fontWeight: '800',
   },
   imagePlaceholder: {
     alignItems: 'center',
@@ -616,41 +766,53 @@ const styles = StyleSheet.create({
     fontSize: 30,
   },
   productInfo: {
+    gap: 4,
     padding: 12,
-  },
-  productCategory: {
-    color: GREEN,
-    fontSize: 9,
-    fontWeight: '700',
   },
   productName: {
     color: '#26392c',
     fontSize: 13,
     fontWeight: '700',
-    marginTop: 4,
-  },
-  productDescription: {
-    color: '#748176',
-    fontSize: 9,
-    marginTop: 4,
+    minHeight: 36,
   },
   productPrice: {
     color: DARK_GREEN,
     fontSize: 13,
     fontWeight: '800',
-    marginTop: 8,
   },
   productUnit: {
     color: '#78857b',
     fontSize: 9,
     fontWeight: '400',
   },
+  productFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  productFooterStacked: {
+    alignItems: 'stretch',
+    flexDirection: 'column',
+  },
+  priceGroup: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+  },
+  comparePrice: {
+    color: '#98a199',
+    fontSize: 9,
+    textDecorationLine: 'line-through',
+  },
   addButton: {
-    minHeight: 36,
+    minHeight: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
-    borderRadius: 9,
+    paddingHorizontal: 9,
+    borderRadius: 18,
     backgroundColor: GREEN,
   },
   addButtonText: {
@@ -692,8 +854,5 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 10,
     fontWeight: '700',
-  },
-  pressed: {
-    opacity: 0.78,
   },
 });

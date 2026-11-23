@@ -35,22 +35,12 @@ export default function CartScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.pageScroll}
         showsVerticalScrollIndicator={false}>
         <View style={[styles.content, isWide && styles.contentWide]}>
           <View style={styles.header}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.replace('/')}
-              style={styles.brand}>
-              <View style={styles.brandMark}><Text style={styles.brandMarkText}>F</Text></View>
-              <View>
-                <Text style={styles.brandName}>FreshCart</Text>
-                <Text style={styles.brandCaption}>FRESHNESS AT YOUR DOOR</Text>
-              </View>
-            </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => router.replace('/')}

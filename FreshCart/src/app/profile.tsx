@@ -109,17 +109,12 @@ export default function ProfileScreen() {
     : 'Guest shopper';
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.pageScroll}
         showsVerticalScrollIndicator={false}>
         <View style={[styles.content, isWide && styles.contentWide]}>
           <View style={styles.brandRow}>
-            <View style={styles.brandMark}><Text style={styles.brandMarkText}>F</Text></View>
-            <View>
-              <Text style={styles.brandName}>FreshCart</Text>
-              <Text style={styles.brandCaption}>YOUR ACCOUNT</Text>
-            </View>
             <View style={styles.demoBadge}>
               <Text style={styles.demoBadgeText}>{account ? roleLabel.toUpperCase() : 'GUEST'}</Text>
             </View>

@@ -232,7 +232,7 @@ export default function AdminScreen() {
 
   if (!adminProfileId) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
         <View style={styles.accessGate}>
           <Text style={styles.accessGateTitle}>
             {loading ? 'Verifying admin access...' : 'Admin access required'}
@@ -467,7 +467,7 @@ export default function AdminScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.appFrame}>
         {isWide ? (
           <View style={styles.sidebar}>

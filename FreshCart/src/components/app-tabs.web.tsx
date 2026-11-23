@@ -7,7 +7,7 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { router, usePathname } from 'expo-router';
+import { usePathname } from 'expo-router';
 import { Pressable, View, StyleSheet } from 'react-native';
 
 import { AppText as Text } from '@/components/app-text';
@@ -16,11 +16,8 @@ import { useCart } from '@/contexts/cart-context';
 import { useDashboardRole } from '@/hooks/use-dashboard-role';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 
-type NavPath = '/' | '/cart' | '/profile' | '/products' | '/admin';
-
 export default function AppTabs() {
   const dashboardRole = useDashboardRole();
-  const isDesktop = useResponsiveBreakpoint(760);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
@@ -47,9 +44,6 @@ export default function AppTabs() {
   return (
     <Tabs>
       <View style={styles.appShell}>
-        {isDesktop ? (
-          <DesktopNavigation isAuthenticated={isAuthenticated} dashboardRole={dashboardRole} />
-        ) : null}
         <TabSlot style={styles.tabSlot} />
       </View>
       <TabList asChild>
@@ -80,80 +74,6 @@ export default function AppTabs() {
         </CustomTabList>
       </TabList>
     </Tabs>
-  );
-}
-
-function DesktopNavigation({
-  dashboardRole,
-  isAuthenticated,
-}: {
-  dashboardRole: ReturnType<typeof useDashboardRole>;
-  isAuthenticated: boolean;
-}) {
-  const pathname = usePathname();
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const [focusedItem, setFocusedItem] = useState<string | null>(null);
-  const items: { label: string; path: NavPath }[] = [
-    { label: 'Home', path: '/' },
-    { label: 'Categories', path: '/' },
-    { label: 'Offers', path: '/' },
-    { label: 'Cart', path: '/cart' },
-  ];
-  if (isAuthenticated) items.push({ label: 'Profile', path: '/profile' });
-  if (dashboardRole === 'business') {
-    items.push({ label: 'Business Studio', path: '/products' });
-  } else if (dashboardRole === 'admin') {
-    items.push({ label: 'Dashboard', path: '/admin' });
-  }
-
-  function isActive(label: string, path: string) {
-    if (path === '/') return label === 'Home' && pathname === '/';
-    if (path === '/admin') return pathname === '/admin' || pathname === '/analytics';
-    return pathname === path || pathname.startsWith(`${path}/`);
-  }
-
-  return (
-    <View style={styles.desktopNavigation}>
-      <View style={styles.desktopNavigationInner}>
-        <View style={styles.desktopNavLinks}>
-          {items.map(({ label, path }) => {
-            const active = isActive(label, path);
-            const hovered = hoveredItem === label || focusedItem === label;
-            return (
-              <Pressable
-                key={label}
-                accessibilityRole="link"
-                accessibilityState={{ selected: active }}
-                onPress={() => router.push(path)}
-                onHoverIn={() => setHoveredItem(label)}
-                onHoverOut={() =>
-                  setHoveredItem((current) => current === label ? null : current)
-                }
-                onFocus={() => setFocusedItem(label)}
-                onBlur={() =>
-                  setFocusedItem((current) => current === label ? null : current)
-                }
-                style={({ pressed }) => [
-                  styles.desktopNavItem,
-                  active && styles.desktopNavItemActive,
-                  hovered && !active && styles.desktopNavItemHovered,
-                  pressed && styles.pressed,
-                ]}>
-                <Text
-                  style={[
-                    styles.desktopNavText,
-                    active && styles.desktopNavTextActive,
-                    hovered && !active && styles.desktopNavTextHovered,
-                  ]}>
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Text style={styles.deliveryNote}>🚚 Free delivery on orders above ₹499</Text>
-      </View>
-    </View>
   );
 }
 

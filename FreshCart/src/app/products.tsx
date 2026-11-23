@@ -323,7 +323,7 @@ export default function ProductsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.appFrame}>
         {isWide ? (
           <View style={styles.sidebar}>
