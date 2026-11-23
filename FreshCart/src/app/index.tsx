@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
+import {
+  Circle,
+  Defs,
+  LinearGradient,
+  Path,
+  Rect,
+  Stop,
+  Svg,
+} from 'react-native-svg';
 import {
   Modal,
   Pressable,
@@ -13,8 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
 import { KeralaLocationSelectors } from '@/components/kerala-location-selectors';
-import NotificationWrapper from '@/components/notification-wrapper';
-import { useCart } from '@/contexts/cart-context';
+import { useNavigationState } from '@/contexts/navigation-context';
 import { useKeralaLocations } from '@/hooks/use-kerala-locations';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { supabase } from '@/lib/supabase';
@@ -48,17 +57,15 @@ function getErrorMessage(error: unknown, fallback: string) {
 export default function HomeScreen() {
   const isWide = useResponsiveBreakpoint(760);
   const isTablet = useResponsiveBreakpoint(600);
-  const { itemCount } = useCart();
+  const { query, setQuery, district: selectedDistrict, setDistrict: setSelectedDistrict, authRequest, setAuthRequest } = useNavigationState();
   const {
     locations,
     loading: locationsLoading,
     error: locationsError,
   } = useKeralaLocations();
-  const [query, setQuery] = useState('');
   const [shops, setShops] = useState<Shop[]>([]);
   const [shopsLoading, setShopsLoading] = useState(true);
   const [shopsError, setShopsError] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState('');
   const [selectedTaluk, setSelectedTaluk] = useState('');
   const [selectedVillage, setSelectedVillage] = useState('');
   const [signupVisible, setSignupVisible] = useState(false);
@@ -94,21 +101,19 @@ export default function HomeScreen() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ title: string; message: string } | null>(null);
   const [homeNotice, setHomeNotice] = useState('');
   const [homeNoticeIsError] = useState(false);
 
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSignedInEmail(session?.user.email ?? null);
-    });
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+    if (!authRequest) return;
+    if (authRequest === 'login') setLoginVisible(true);
+    else {
+      setSignupMode('customer');
+      setSignupVisible(true);
+    }
+    setAuthRequest(null);
+  }, [authRequest, setAuthRequest]);
 
   useEffect(() => {
     let active = true;
@@ -428,78 +433,11 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={[styles.page, { paddingBottom: isWide ? 36 : 92 }]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          <View style={[styles.header, isWide && styles.wideHeader]}>
-            <Pressable onPress={() => setQuery('')} style={styles.brand}>
-              <Text style={styles.brandLeaf}>🌿</Text>
-              <View>
-                <Text style={styles.brandName}>FreshCart</Text>
-                <Text style={styles.brandTagline}>Groceries made easy</Text>
-              </View>
-            </Pressable>
-
-            {isWide && (
-              <View style={[styles.searchBar, styles.wideSearchBar]}>
-                <TextInput
-                  accessibilityLabel="Search shops"
-                  placeholder="Search shops..."
-                  placeholderTextColor="#8b958d"
-                  value={query}
-                  onChangeText={setQuery}
-                  style={styles.searchInput}
-                />
-                <View style={styles.searchIcon}>
-                  <Text style={styles.searchIconText}>⌕</Text>
-                </View>
-              </View>
-            )}
-
-            <View style={[styles.headerActions, !isWide && styles.headerActionsCompact]}>
-              {isWide && (
-                <View style={styles.location}>
-                  <Text style={styles.locationIcon}>⌖</Text>
-                  <Text style={styles.locationText}>
-                    {selectedDistrict || 'Kerala'}
-                  </Text>
-                </View>
-              )}
-              <View style={[styles.authActions, !isWide && styles.authActionsCompact]}>
-                {signupVisible || loginVisible ? null : !signedInEmail ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Open customer and business registration"
-                    onPress={() => {
-                      setSignupVisible(true);
-                      setSignupMode('customer');
-                    }}
-                    style={({ pressed }) => [
-                      styles.signupButton,
-                      pressed && styles.authPressed,
-                    ]}>
-                    <View style={styles.personHead} />
-                    <View style={styles.personShoulders} />
-                  </Pressable>
-                ) : (
-                  <NotificationWrapper />
-                )}
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Open cart, ${itemCount} items`}
-                onPress={() => router.push('/cart')}
-                style={styles.cartButton}>
-                <Text style={styles.cartIcon}>🛒</Text>
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>{itemCount}</Text>
-                </View>
-              </Pressable>
-            </View>
-          </View>
-
           {homeNotice ? (
             <View
               accessibilityLiveRegion="polite"
@@ -513,28 +451,30 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
-          {!isWide && (
-            <View style={styles.searchBar}>
-              <TextInput
-                accessibilityLabel="Search shops"
-                placeholder="Search shops..."
-                placeholderTextColor="#8b958d"
-                value={query}
-                onChangeText={setQuery}
-                style={styles.searchInput}
-              />
-              <View style={styles.searchIcon}>
-                <Text style={styles.searchIconText}>⌕</Text>
-              </View>
+          <View style={[styles.hero, isWide && styles.heroWide]}>
+            <Image
+              source={require('../../assets/images/store/fresh-vegetable-basket.png')}
+              style={styles.heroImage}
+              contentFit="cover"
+            />
+            <View style={styles.heroWash} />
+            <View style={[styles.heroCopy, isWide && styles.heroCopyWide]}>
+              <Text style={styles.directoryEyebrow}>—  SHOP LOCAL, SHOP FRESH  —</Text>
+              <Text style={[styles.directoryTitle, isWide && styles.directoryTitleWide]}>
+                <Text style={[styles.directoryTitleDark, isWide && styles.directoryTitleDarkWide]}>Find your next </Text>
+                <Text style={[styles.directoryTitleGreen, isWide && styles.directoryTitleGreenWide]}>favourite </Text>
+                <Text style={[styles.directoryTitleDark, isWide && styles.directoryTitleDarkWide]}>shop</Text>
+              </Text>
+              <Text style={styles.directorySubtitle}>
+                Browse approved FreshCart businesses by district, taluk, and village.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push('/shop')}
+                style={({ pressed }) => [styles.heroButton, pressed && styles.authPressed]}>
+                <Text style={styles.heroButtonText}>Explore Shops  →</Text>
+              </Pressable>
             </View>
-          )}
-
-          <View style={styles.directoryIntro}>
-            <Text style={styles.directoryEyebrow}>SHOP LOCAL, SHOP FRESH</Text>
-            <Text style={styles.directoryTitle}>Find your next favourite shop</Text>
-            <Text style={styles.directorySubtitle}>
-              Browse approved FreshCart businesses by district, taluk, and village.
-            </Text>
           </View>
 
           <View style={styles.locationFilters}>
@@ -579,7 +519,20 @@ export default function HomeScreen() {
                   }}>
                   <Text style={styles.viewAll}>Clear filters ×</Text>
                 </Pressable>
-              ) : null}
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setQuery('');
+                    setSelectedDistrict('');
+                    setSelectedTaluk('');
+                    setSelectedVillage('');
+                  }}
+                  style={styles.viewAllButton}>
+                  <Text style={styles.viewAllButtonText}>View All Shops</Text>
+                  <Text style={styles.viewAllArrow}>→</Text>
+                </Pressable>
+              )}
             </View>
             {shopsError ? (
               <View style={styles.directoryEmpty}>
@@ -602,9 +555,39 @@ export default function HomeScreen() {
                     }
                     style={({ pressed }) => [
                       styles.shopCard,
-                      { flexBasis: isWide ? '31%' : isTablet ? '47%' : '100%' },
+                      { flexBasis: isWide ? '31.5%' : isTablet ? '47.5%' : '100%' },
+                      isWide && styles.shopCardWide,
+                      isTablet && !isWide && styles.shopCardTablet,
                       pressed && styles.shopCardPressed,
                     ]}>
+                    <View accessibilityElementsHidden importantForAccessibility="no" style={styles.shopCardAccent} />
+                    <View accessibilityElementsHidden importantForAccessibility="no" style={styles.shopWatermark}>
+                      <Svg width="100%" height="64" viewBox="0 0 420 64">
+                        <Defs>
+                          <LinearGradient id={`farmFade${shop.id}`} x1="0" y1="0" x2="0" y2="1">
+                            <Stop offset="0" stopColor="#75a96e" stopOpacity="0" />
+                            <Stop offset="0.45" stopColor="#75a96e" stopOpacity="0.16" />
+                            <Stop offset="1" stopColor="#75a96e" stopOpacity="0.42" />
+                          </LinearGradient>
+                          <LinearGradient id={`rowFade${shop.id}`} x1="0" y1="0" x2="1" y2="0">
+                            <Stop offset="0" stopColor="#75a96e" stopOpacity="0.12" />
+                            <Stop offset="0.5" stopColor="#75a96e" stopOpacity="0.38" />
+                            <Stop offset="1" stopColor="#75a96e" stopOpacity="0.12" />
+                          </LinearGradient>
+                        </Defs>
+                        <Rect x="0" y="0" width="420" height="64" fill={`url(#farmFade${shop.id})`} />
+                        <Path d="M0 52 C70 28 140 44 210 29 C280 14 350 30 420 18 L420 64 L0 64 Z" fill={`url(#rowFade${shop.id})`} />
+                        <Path d="M0 58 C80 43 150 58 230 42 C310 28 365 41 420 31" fill="none" stroke="#75a96e" strokeWidth="2" opacity="0.32" />
+                        <Path d="M55 64 C95 49 125 46 160 64 M145 64 C185 48 220 43 255 64 M250 64 C290 47 335 42 370 64" fill="none" stroke="#75a96e" strokeWidth="1.5" opacity="0.28" />
+                        <Rect x="42" y="38" width="17" height="12" rx="1" fill="#75a96e" opacity="0.24" />
+                        <Rect x="47" y="31" width="7" height="7" rx="1" fill="#75a96e" opacity="0.24" />
+                        <Rect x="334" y="36" width="22" height="14" rx="1" fill="#75a96e" opacity="0.22" />
+                        <Rect x="341" y="28" width="8" height="8" rx="1" fill="#75a96e" opacity="0.22" />
+                        <Circle cx="101" cy="43" r="5" fill="#75a96e" opacity="0.24" />
+                        <Path d="M101 38 L101 27 M101 30 C96 24 91 24 88 21 M101 33 C107 27 112 27 115 24" fill="none" stroke="#75a96e" strokeWidth="1.5" opacity="0.32" />
+                      </Svg>
+                    </View>
+                    <View style={styles.shopCardContent}>
                     <View style={styles.shopCardTop}>
                       <View style={styles.shopIcon}>
                         <Text style={styles.shopIconText}>
@@ -616,10 +599,15 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                     <Text numberOfLines={2} style={styles.shopName}>{shop.business_name}</Text>
-                    <Text numberOfLines={1} style={styles.shopLocation}>
-                      ⌖ {[shop.village, shop.taluk, shop.district].filter(Boolean).join(', ') || 'Kerala'}
-                    </Text>
-                    <Text style={styles.shopCardLink}>Visit shop <Text style={styles.buttonArrow}>→</Text></Text>
+                    <View style={styles.shopLocationRow}>
+                      <Text numberOfLines={1} style={styles.shopLocation}>
+                        {[shop.district, shop.taluk].filter(Boolean).join(', ') || 'Kerala'}
+                      </Text>
+                    </View>
+                    <View style={styles.shopCardLinkPill}>
+                      <Text style={styles.shopCardLink}>Visit shop <Text style={styles.buttonArrow}>→</Text></Text>
+                    </View>
+                    </View>
                   </Pressable>
                 ))}
               </View>
@@ -1119,7 +1107,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fbfcfb',
   },
   page: {
     alignItems: 'center',
@@ -1130,86 +1118,110 @@ const styles = StyleSheet.create({
     maxWidth: 1320,
     paddingHorizontal: 20,
   },
-  header: {
-    minHeight: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    paddingVertical: 10,
+  hero: {
+    height: 270,
+    marginTop: 8,
+    marginBottom: 18,
+    overflow: 'hidden',
+    borderRadius: 20,
+    backgroundColor: '#edf7eb',
   },
-  wideHeader: {
-    minHeight: 68,
+  heroWide: {
+    height: 288,
   },
-  brand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  heroImage: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
   },
-  brandLeaf: {
-    fontSize: 34,
+  heroWash: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(247, 251, 245, 0.08)',
   },
-  brandName: {
-    color: DARK_GREEN,
-    fontSize: 21,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  heroCopy: {
+    position: 'relative',
+    width: '62%',
+    height: '100%',
+    justifyContent: 'center',
+    paddingLeft: 24,
+    paddingRight: 12,
   },
-  brandTagline: {
-    color: MUTED,
-    fontSize: 10,
-    marginTop: 1,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  searchBar: {
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#dce4dd',
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    paddingLeft: 17,
-    paddingRight: 4,
-    marginBottom: 14,
-  },
-  wideSearchBar: {
-    flex: 1,
-    maxWidth: 650,
-    marginBottom: 0,
-  },
-  directoryIntro: {
-    paddingTop: 16,
-    paddingBottom: 18,
+  heroCopyWide: {
+    width: '50%',
+    maxWidth: 560,
+    paddingLeft: 38,
+    paddingRight: 24,
   },
   directoryEyebrow: {
     color: GREEN,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 1.1,
+    letterSpacing: 1.4,
   },
   directoryTitle: {
-    color: DARK_GREEN,
-    fontSize: 25,
-    lineHeight: 33,
+    marginTop: 8,
+  },
+  directoryTitleWide: {
+    maxWidth: 520,
+  },
+  directoryTitleDark: {
+    color: '#062e1b',
+    fontSize: 30,
+    lineHeight: 36,
     fontWeight: '800',
-    marginTop: 5,
+  },
+  directoryTitleGreen: {
+    color: GREEN,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '800',
+  },
+  directoryTitleDarkWide: {
+    fontSize: 38,
+    lineHeight: 44,
+  },
+  directoryTitleGreenWide: {
+    fontSize: 38,
+    lineHeight: 44,
   },
   directorySubtitle: {
-    color: MUTED,
+    maxWidth: 430,
+    color: '#46594b',
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  heroButton: {
+    alignSelf: 'flex-start',
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 18,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    backgroundColor: '#138a39',
+  },
+  heroButtonText: {
+    color: '#ffffff',
     fontSize: 12,
-    marginTop: 4,
+    fontWeight: '800',
   },
   locationFilters: {
     width: '100%',
     flexDirection: 'column',
     gap: 12,
-    padding: 14,
+    padding: 10,
     marginBottom: 24,
     borderWidth: 1,
     borderColor: '#e5ece5',
-    borderRadius: 16,
+    borderRadius: 22,
     backgroundColor: '#f8fbf8',
   },
   locationFiltersStacked: {
@@ -1296,24 +1308,60 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    gap: 14,
+    columnGap: 16,
+    rowGap: 16,
   },
   shopCard: {
-    minHeight: 176,
-    padding: 16,
+    minHeight: 202,
+    overflow: 'hidden',
+    position: 'relative',
     borderWidth: 1,
-    borderColor: '#e4ebe4',
-    borderRadius: 16,
+    borderColor: '#dfe6df',
+    borderRadius: 20,
     backgroundColor: '#ffffff',
     shadowColor: '#18351f',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.09,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  shopCardAccent: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 110,
+    height: 110,
+    borderBottomLeftRadius: 110,
+    backgroundColor: '#f3faf2',
+  },
+  shopCardWide: {
+    minHeight: 230,
+    height: 230,
+  },
+  shopCardTablet: {
+    minHeight: 180,
   },
   shopCardPressed: {
     opacity: 0.82,
     transform: [{ scale: 0.99 }],
+  },
+  shopCardContent: {
+    position: 'relative',
+    zIndex: 10,
+    height: '100%',
+    minHeight: 230,
+    paddingHorizontal: 28,
+    paddingTop: 28,
+    paddingBottom: 24,
+  },
+  shopWatermark: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    height: 64,
+    opacity: 0.32,
+    pointerEvents: 'none',
   },
   shopCardTop: {
     flexDirection: 'row',
@@ -1322,45 +1370,67 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   shopIcon: {
-    width: 42,
-    height: 42,
+    width: 78,
+    height: 78,
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 13,
-    backgroundColor: '#eaf5e9',
+    borderRadius: 39,
+    backgroundColor: '#dcf4df',
+    borderWidth: 0,
   },
   shopIconText: {
     color: DARK_GREEN,
-    fontSize: 17,
+    fontSize: 26,
+    lineHeight: 30,
     fontWeight: '800',
   },
   businessTypeBadge: {
     overflow: 'hidden',
     maxWidth: '70%',
-    paddingHorizontal: 9,
+    minHeight: 26,
+    textAlignVertical: 'center',
+    paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 20,
-    backgroundColor: '#f1f5ef',
-    color: '#526155',
-    fontSize: 9,
+    borderWidth: 1,
+    borderColor: '#cde7cf',
+    backgroundColor: '#f4faf3',
+    color: '#3c7e46',
+    fontSize: 11,
     fontWeight: '700',
   },
   shopName: {
-    color: '#1e3324',
-    fontSize: 15,
+    color: '#17291c',
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: '800',
-    marginTop: 14,
+    marginTop: 16,
+  },
+  shopLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+    marginTop: 8,
   },
   shopLocation: {
-    color: '#647166',
-    fontSize: 10,
-    marginTop: 6,
+    flex: 1,
+    color: '#707a72',
+    fontSize: 11,
+    lineHeight: 15,
   },
   shopCardLink: {
-    color: GREEN,
-    fontSize: 10,
+    color: '#28773a',
+    fontSize: 11,
     fontWeight: '700',
-    marginTop: 14,
+  },
+  shopCardLinkPill: {
+    alignSelf: 'flex-start',
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#dff1e1',
   },
   directoryEmpty: {
     alignItems: 'center',
@@ -1371,54 +1441,6 @@ const styles = StyleSheet.create({
     borderColor: '#e5ece5',
     borderRadius: 14,
     backgroundColor: '#ffffff',
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: 'Poppins_400Regular',
-    color: '#253129',
-    fontSize: 14,
-  },
-  searchIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 20,
-    backgroundColor: GREEN,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchIconText: {
-    color: '#ffffff',
-    fontSize: 27,
-    lineHeight: 31,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-  },
-  headerActionsCompact: {
-    gap: 7,
-  },
-  authActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  authActionsCompact: {
-    gap: 6,
-  },
-  signupButton: {
-    width: 34,
-    height: 34,
-    minHeight: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 0,
-    position: 'relative',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#cfe2d1',
-    backgroundColor: '#f0f8ee',
   },
   homeNotice: {
     minHeight: 40,
@@ -1568,139 +1590,11 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 17,
   },
-  personHead: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    top: 7,
-    borderRadius: 5,
-    backgroundColor: '#287744',
-  },
-  personShoulders: {
-    position: 'absolute',
-    width: 16,
-    height: 9,
-    bottom: 6,
-    borderTopLeftRadius: 9,
-    borderTopRightRadius: 9,
-    borderBottomLeftRadius: 5,
-    borderBottomRightRadius: 5,
-    backgroundColor: '#287744',
-  },
   authPressed: {
     opacity: 0.75,
   },
   authButtonDisabled: {
     opacity: 0.65,
-  },
-  location: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  locationIcon: {
-    color: '#26332a',
-    fontSize: 24,
-  },
-  locationText: {
-    color: '#253129',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  chevron: {
-    color: '#66726a',
-    fontSize: 16,
-  },
-  cartButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cartIcon: {
-    fontSize: 23,
-  },
-  cartBadge: {
-    position: 'absolute',
-    right: -2,
-    top: -1,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 10,
-    backgroundColor: GREEN,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  cartBadgeText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  hero: {
-    minHeight: 242,
-    borderRadius: 17,
-    backgroundColor: '#e5f7c1',
-    overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-    paddingHorizontal: 36,
-    paddingVertical: 24,
-    position: 'relative',
-  },
-  heroCompact: {
-    minHeight: 260,
-    paddingHorizontal: 22,
-    paddingVertical: 22,
-  },
-  heroCopy: {
-    flex: 1,
-    zIndex: 1,
-  },
-  eyebrow: {
-    color: GREEN,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.6,
-    marginBottom: 7,
-  },
-  eyebrowCompact: {
-    fontSize: 9,
-    letterSpacing: 1.2,
-  },
-  heroTitle: {
-    color: '#153c22',
-    fontSize: 34,
-    lineHeight: 39,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-  },
-  heroTitleCompact: {
-    fontSize: 27,
-    lineHeight: 31,
-  },
-  heroTitleGreen: {
-    color: GREEN,
-  },
-  heroSubtitle: {
-    marginTop: 7,
-    color: '#263c2d',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  heroButton: {
-    alignSelf: 'flex-start',
-    marginTop: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 24,
-    backgroundColor: GREEN,
-  },
-  heroButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
   },
   buttonArrow: {
     fontSize: 15,
@@ -1875,6 +1769,28 @@ const styles = StyleSheet.create({
     color: GREEN,
     fontSize: 12,
     fontWeight: '700',
+  },
+  viewAllButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    borderWidth: 1.5,
+    borderColor: '#41a94f',
+    borderRadius: 28,
+    backgroundColor: '#ffffff',
+  },
+  viewAllButtonText: {
+    color: GREEN,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  viewAllArrow: {
+    color: GREEN,
+    fontSize: 18,
+    lineHeight: 20,
   },
   productGrid: {
     flexDirection: 'row',

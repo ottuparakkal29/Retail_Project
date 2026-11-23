@@ -127,7 +127,7 @@ export default function AnalyticsScreen() {
 
   if (adminAccess !== 'allowed') {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
         <View style={styles.accessGate}>
           <Text style={styles.accessTitle}>
             {adminAccess === 'checking' ? 'Verifying admin access…' : 'Admin access required'}
@@ -142,7 +142,7 @@ export default function AnalyticsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.appFrame}>
         {isWide ? (
           <View style={styles.sidebar}>
