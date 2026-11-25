@@ -23,6 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
 import { KeralaLocationSelectors } from '@/components/kerala-location-selectors';
+import { FollowButton } from '@/components/follow-button';
 import { useNavigationState } from '@/contexts/navigation-context';
 import { useKeralaLocations } from '@/hooks/use-kerala-locations';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
@@ -57,7 +58,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 export default function HomeScreen() {
   const isWide = useResponsiveBreakpoint(760);
   const isTablet = useResponsiveBreakpoint(600);
-  const { query, setQuery, district: selectedDistrict, setDistrict: setSelectedDistrict, authRequest, setAuthRequest } = useNavigationState();
+  const { query, setQuery, district: selectedDistrict, setDistrict: setSelectedDistrict, taluk: selectedTaluk, setTaluk: setSelectedTaluk, village: selectedVillage, setVillage: setSelectedVillage, authRequest, setAuthRequest } = useNavigationState();
   const {
     locations,
     loading: locationsLoading,
@@ -66,8 +67,6 @@ export default function HomeScreen() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [shopsLoading, setShopsLoading] = useState(true);
   const [shopsError, setShopsError] = useState('');
-  const [selectedTaluk, setSelectedTaluk] = useState('');
-  const [selectedVillage, setSelectedVillage] = useState('');
   const [signupVisible, setSignupVisible] = useState(false);
   const [signupName, setSignupName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
@@ -546,19 +545,13 @@ export default function HomeScreen() {
             ) : visibleShops.length ? (
               <View style={styles.shopGrid}>
                 {visibleShops.map((shop) => (
-                  <Pressable
+                  <View
                     key={shop.id}
-                    accessibilityRole="link"
-                    accessibilityLabel={`Open ${shop.business_name}, ${shop.business_type ?? 'business'}`}
-                    onPress={() =>
-                      router.push({ pathname: '/shop', params: { id: shop.id } })
-                    }
-                    style={({ pressed }) => [
+                    style={[
                       styles.shopCard,
                       { flexBasis: isWide ? '31.5%' : isTablet ? '47.5%' : '100%' },
                       isWide && styles.shopCardWide,
                       isTablet && !isWide && styles.shopCardTablet,
-                      pressed && styles.shopCardPressed,
                     ]}>
                     <View accessibilityElementsHidden importantForAccessibility="no" style={styles.shopCardAccent} />
                     <View accessibilityElementsHidden importantForAccessibility="no" style={styles.shopWatermark}>
@@ -588,6 +581,11 @@ export default function HomeScreen() {
                       </Svg>
                     </View>
                     <View style={styles.shopCardContent}>
+                    <Pressable
+                      accessibilityRole="link"
+                      accessibilityLabel={`Open ${shop.business_name}, ${shop.business_type ?? 'business'}`}
+                      onPress={() => router.push({ pathname: '/shop', params: { id: shop.id } })}
+                      style={({ pressed }) => pressed && styles.shopCardPressed}>
                     <View style={styles.shopCardTop}>
                       <View style={styles.shopIcon}>
                         <Text style={styles.shopIconText}>
@@ -607,8 +605,10 @@ export default function HomeScreen() {
                     <View style={styles.shopCardLinkPill}>
                       <Text style={styles.shopCardLink}>Visit shop <Text style={styles.buttonArrow}>→</Text></Text>
                     </View>
+                    </Pressable>
+                    <FollowButton businessId={shop.id} shopName={shop.business_name} />
                     </View>
-                  </Pressable>
+                  </View>
                 ))}
               </View>
             ) : (
@@ -1336,7 +1336,6 @@ const styles = StyleSheet.create({
   },
   shopCardWide: {
     minHeight: 230,
-    height: 230,
   },
   shopCardTablet: {
     minHeight: 180,
@@ -1348,7 +1347,6 @@ const styles = StyleSheet.create({
   shopCardContent: {
     position: 'relative',
     zIndex: 10,
-    height: '100%',
     minHeight: 230,
     paddingHorizontal: 28,
     paddingTop: 28,

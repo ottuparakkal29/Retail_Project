@@ -73,6 +73,8 @@ export default function AppTabs() {
           <TabTrigger name="analytics" href="/analytics" style={styles.hiddenTrigger} />
           <TabTrigger name="orders" href="/orders" style={styles.hiddenTrigger} />
           <TabTrigger name="incoming-orders" href="/incoming-orders" style={styles.hiddenTrigger} />
+          <TabTrigger name="offers" href="/offers" style={styles.hiddenTrigger} />
+          <TabTrigger name="shop-updates" href="/shop-updates" style={styles.hiddenTrigger} />
         </CustomTabList>
       </TabList>
     </Tabs>

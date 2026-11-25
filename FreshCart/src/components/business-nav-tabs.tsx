@@ -5,7 +5,7 @@ import { AppText as Text } from '@/components/app-text';
 import { Palette } from '@/constants/palette';
 
 // Switches between the Business Studio pages on narrow screens, where the sidebar is hidden.
-export function BusinessNavTabs({ active }: { active: 'products' | 'orders' }) {
+export function BusinessNavTabs({ active }: { active: 'products' | 'orders' | 'updates' }) {
   return (
     <View accessibilityRole="tablist" style={styles.tabs}>
       <Pressable
@@ -14,6 +14,15 @@ export function BusinessNavTabs({ active }: { active: 'products' | 'orders' }) {
         onPress={() => active !== 'products' && router.replace('/products')}
         style={[styles.tab, active === 'products' && styles.tabActive]}>
         <Text style={[styles.tabText, active === 'products' && styles.tabTextActive]}>Products</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active === 'updates' }}
+        onPress={() => active !== 'updates' && router.replace('/shop-updates')}
+        style={[styles.tab, active === 'updates' && styles.tabActive]}>
+        <Text style={[styles.tabText, active === 'updates' && styles.tabTextActive]}>
+          Updates
+        </Text>
       </Pressable>
       <Pressable
         accessibilityRole="tab"

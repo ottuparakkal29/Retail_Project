@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText as Text } from '@/components/app-text';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { FollowButton } from '@/components/follow-button';
 import { useCart, type CartProduct } from '@/contexts/cart-context';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { supabase } from '@/lib/supabase';
@@ -246,6 +247,7 @@ export default function ShopStorefrontScreen() {
                         {shop.business_type || 'Business'}
                       </Text>
                     </View>
+                    <FollowButton businessId={shop.id} shopName={shop.business_name} />
                     <Text numberOfLines={1} style={styles.shopLocation}>
                       ⌖ {[shop.village, shop.taluk, shop.district].filter(Boolean).join(', ') ||
                         'Location not listed'}

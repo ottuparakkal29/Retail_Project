@@ -190,7 +190,7 @@ export default function CartScreen() {
             <Text style={styles.checkoutArrow}>→</Text>
           </Pressable>
           <Text style={styles.checkoutNote}>
-            💵 Cash on delivery or pay at the shop. No online payment needed.
+            💵 Choose cash on delivery or online payment at checkout.
           </Text>
         </View>
       </View>
