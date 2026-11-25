@@ -339,6 +339,7 @@ export default function ProductsScreen() {
                 </View>
               </View>
               <View style={styles.sidebarMenu}>
+                <SidebarItem icon="✦" label="Today's Update" onPress={() => router.replace('/shop-updates')} />
                 <SidebarItem icon="⌂" label="Dashboard" onPress={() => {}} />
                 <SidebarItem active icon="▣" label="Products" onPress={() => {}} />
                 <SidebarItem

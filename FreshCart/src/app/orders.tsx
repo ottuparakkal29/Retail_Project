@@ -11,7 +11,9 @@ import { Palette } from '@/constants/palette';
 import { useNavigationState } from '@/contexts/navigation-context';
 import { useCustomerOrders } from '@/hooks/use-customer-orders';
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
-import type { Order } from '@/lib/orders';
+import { fetchCustomerProfile, type Order, type OrderFeedback } from '@/lib/orders';
+import { openRazorpayCheckout } from '@/lib/razorpay';
+import { supabase } from '@/lib/supabase';
 
 export default function OrdersScreen() {
   const isDesktop = useResponsiveBreakpoint(760);
@@ -29,6 +31,8 @@ export default function OrdersScreen() {
     cancelOrder,
   } = useCustomerOrders();
   const [orderToCancel, setOrderToCancel] = useState<Order | null>(null);
+  const [retryingPaymentId, setRetryingPaymentId] = useState<string | null>(null);
+  const [paymentFeedback, setPaymentFeedback] = useState<OrderFeedback | null>(null);
 
   async function confirmCancel() {
     if (!orderToCancel) return;
@@ -36,6 +40,56 @@ export default function OrdersScreen() {
       await cancelOrder(orderToCancel.id);
     } finally {
       setOrderToCancel(null);
+    }
+  }
+
+  async function retryPayment(order: Order) {
+    if (retryingPaymentId) return;
+    setRetryingPaymentId(order.id);
+    setPaymentFeedback(null);
+    let paymentHandled = false;
+    try {
+      const [customer, sessionResult] = await Promise.all([
+        fetchCustomerProfile(),
+        supabase.auth.getSession(),
+      ]);
+      if (sessionResult.error) throw sessionResult.error;
+      if (!sessionResult.data.session) throw new Error('Sign in again before paying online.');
+
+      await openRazorpayCheckout({
+        orderId: order.id,
+        name: customer?.fullName ?? '',
+        email: sessionResult.data.session.user.email ?? '',
+        contact: customer?.phone ?? '',
+        onSuccess: async (paymentId) => {
+          if (paymentHandled) return;
+          paymentHandled = true;
+          setPaymentFeedback({ tone: 'success', text: `Payment confirmed. Payment ID: ${paymentId}` });
+          await refresh();
+        },
+        onFailure: (message) => {
+          if (paymentHandled) return;
+          paymentHandled = true;
+          setPaymentFeedback({ tone: 'error', text: `${message} The order remains unpaid.` });
+        },
+        onDismiss: () => {
+          if (paymentHandled) return;
+          paymentHandled = true;
+          setPaymentFeedback({
+            tone: 'error',
+            text: 'Payment was cancelled. This order remains unpaid and can be retried.',
+          });
+        },
+      });
+    } catch (paymentError) {
+      if (!paymentHandled) {
+        setPaymentFeedback({
+          tone: 'error',
+          text: paymentError instanceof Error ? paymentError.message : 'Unable to start online payment.',
+        });
+      }
+    } finally {
+      setRetryingPaymentId(null);
     }
   }
 
@@ -85,7 +139,9 @@ export default function OrdersScreen() {
             key={order.id}
             cancelling={cancellingId === order.id}
             onCancel={setOrderToCancel}
+            onRetryPayment={(selectedOrder) => void retryPayment(selectedOrder)}
             order={order}
+            retryingPayment={retryingPaymentId === order.id}
           />
         ))}
       </View>
@@ -143,6 +199,32 @@ export default function OrdersScreen() {
               </Pressable>
             ) : null}
           </View>
+
+          {paymentFeedback ? (
+            <Pressable
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+              onPress={() => setPaymentFeedback(null)}
+              style={[
+                styles.notice,
+                paymentFeedback.tone === 'error' && styles.errorNotice,
+              ]}>
+              <Text
+                style={[
+                  styles.noticeText,
+                  paymentFeedback.tone === 'error' && styles.errorNoticeText,
+                ]}>
+                {paymentFeedback.text}
+              </Text>
+              <Text
+                style={[
+                  styles.noticeDismiss,
+                  paymentFeedback.tone === 'error' && styles.errorNoticeText,
+                ]}>
+                ×
+              </Text>
+            </Pressable>
+          ) : null}
 
           {feedback ? (
             <Pressable

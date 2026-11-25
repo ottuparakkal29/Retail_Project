@@ -117,7 +117,8 @@ export function getFulfillmentLabel(type: FulfillmentType) {
 }
 
 export function getPaymentLabel(method: string) {
-  return method === 'cod' ? 'Cash on Delivery / Pay at Shop' : method;
+  if (method === 'cod') return 'Cash on Delivery / Pay at Shop';
+  return method === 'online' ? 'Online payment' : method;
 }
 
 export function getDeliveryCharge(subtotal: number, fulfillmentType: FulfillmentType) {
@@ -516,6 +517,7 @@ export type OrderDraft = CheckoutFields & {
   idempotencyKey: string;
   customerId: string;
   businessId: string;
+  paymentMethod?: 'cod' | 'online';
   lines: OrderLine[];
   subtotal: number;
   deliveryCharge: number;
@@ -551,7 +553,7 @@ function toOrderInsert(draft: OrderDraft) {
     business_id: draft.businessId,
     status: 'pending',
     fulfillment_type: draft.fulfillmentType,
-    payment_method: 'cod',
+    payment_method: draft.paymentMethod ?? 'cod',
     payment_status: 'unpaid',
     subtotal: draft.subtotal,
     delivery_charge: draft.deliveryCharge,

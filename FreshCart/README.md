@@ -23,6 +23,18 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    business-review migration aligns the business table with its profile-linked
    schema and enables admin-only review updates.
 
+   For shop follows and updates, create `shop_updates` and `shop_followers`
+   before running the shop-follows access migration. Their `id` and `created_at`
+   columns need database defaults; `shop_followers.customer_id` must reference
+   the Supabase Auth user ID, `business_id` must identify `business_profiles.id`,
+   and `(customer_id, business_id)` must be unique. Apply
+   `20261124001000_shop_follows_updates_access.sql` in the SQL Editor. Review
+   and remove any conflicting existing permissive policies on those tables:
+   PostgreSQL combines permissive policies with OR. Businesses can read their
+   own follower rows to calculate follower counts. The Offers feed displays
+   active, unexpired updates from approved businesses and uses the same
+   district, taluk, and village filters as the shop directory.
+
    To enable an administrator, first create/sign up that account with Supabase
    Auth, then assign its profile the `admin` role in the SQL Editor:
 

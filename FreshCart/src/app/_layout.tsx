@@ -15,6 +15,7 @@ import '@/global.css';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import Navbar from '@/components/navbar';
+import { FollowProvider } from '@/contexts/follow-context';
 import { CartProvider } from '@/contexts/cart-context';
 import { NavigationProvider } from '@/contexts/navigation-context';
 
@@ -39,10 +40,12 @@ export default function TabLayout() {
       <AnimatedSplashOverlay />
       <CartProvider>
         <NavigationProvider>
-          <View style={{ flex: 1 }}>
-            <Navbar />
-            <AppTabs />
-          </View>
+          <FollowProvider>
+            <View style={{ flex: 1 }}>
+              <Navbar />
+              <AppTabs />
+            </View>
+          </FollowProvider>
         </NavigationProvider>
       </CartProvider>
     </ThemeProvider>

@@ -10,10 +10,18 @@ import { getStatusMeta, type Order } from '@/lib/orders';
 type CustomerOrderCardProps = {
   order: Order;
   cancelling: boolean;
+  retryingPayment: boolean;
   onCancel: (order: Order) => void;
+  onRetryPayment: (order: Order) => void;
 };
 
-export function CustomerOrderCard({ order, cancelling, onCancel }: CustomerOrderCardProps) {
+export function CustomerOrderCard({
+  order,
+  cancelling,
+  retryingPayment,
+  onCancel,
+  onRetryPayment,
+}: CustomerOrderCardProps) {
   const note = getStatusMeta(order.status).customerNote;
   const itemCount = order.items.length;
 
@@ -51,6 +59,24 @@ export function CustomerOrderCard({ order, cancelling, onCancel }: CustomerOrder
       <View style={styles.section}>
         <OrderTotals order={order} />
       </View>
+
+      {order.status === 'pending' &&
+      order.paymentMethod === 'online' &&
+      order.paymentStatus === 'unpaid' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Retry payment for order ${order.orderNumber}`}
+          accessibilityState={{ busy: retryingPayment, disabled: retryingPayment }}
+          disabled={retryingPayment}
+          onPress={() => onRetryPayment(order)}
+          style={({ pressed }) => [styles.retryPaymentButton, (pressed || retryingPayment) && styles.dimmed]}>
+          {retryingPayment ? (
+            <ActivityIndicator color={Palette.darkGreen} size="small" />
+          ) : (
+            <Text style={styles.retryPaymentText}>Retry online payment</Text>
+          )}
+        </Pressable>
+      ) : null}
 
       {order.fulfillmentType === 'delivery' && order.deliveryAddress ? (
         <View style={styles.detailBlock}>
@@ -183,6 +209,20 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: Palette.danger,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  retryPaymentButton: {
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Palette.green,
+    borderRadius: 21,
+    backgroundColor: '#eef8ec',
+  },
+  retryPaymentText: {
+    color: Palette.darkGreen,
     fontSize: 12,
     fontWeight: '800',
   },

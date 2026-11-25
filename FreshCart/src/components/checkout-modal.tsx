@@ -18,6 +18,8 @@ import { getCartItemIssue, useCart, type CartSnapshot } from '@/contexts/cart-co
 import { useResponsiveBreakpoint } from '@/hooks/use-responsive-breakpoint';
 import { getErrorMessage } from '@/lib/errors';
 import { formatCurrency, formatQuantity, roundMoney } from '@/lib/format';
+import { openRazorpayCheckout } from '@/lib/razorpay';
+import { supabase } from '@/lib/supabase';
 import {
   calculateTotals,
   createIdempotencyKey,
@@ -34,7 +36,15 @@ import {
   type OrderLine,
 } from '@/lib/orders';
 
-type Phase = 'editing' | 'submitting' | 'retry' | 'placed';
+type Phase =
+  | 'editing'
+  | 'submitting'
+  | 'retry'
+  | 'placed'
+  | 'payment-opening'
+  | 'payment-pending'
+  | 'payment-confirmed';
+type PaymentMethod = 'cod' | 'online';
 
 type PlacedSummary = {
   orderNumber: string;
@@ -44,7 +54,7 @@ type PlacedSummary = {
   cartCleared: boolean;
 };
 
-type Attempt = { draft: OrderDraft; shopName: string };
+type Attempt = { draft: OrderDraft; shopName: string; customer: CustomerProfile };
 
 type PreparedLines = { businessId: string; shopName: string; lines: OrderLine[] } | { problem: string };
 
@@ -94,6 +104,7 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
   const keyRef = useRef(initialKey);
   const attemptRef = useRef<Attempt | null>(null);
   const submittingRef = useRef(false);
+  const paymentOutcomeHandledRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('editing');
   const [fulfillment, setFulfillment] = useState<FulfillmentType>('delivery');
@@ -105,6 +116,10 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
   const [fieldErrors, setFieldErrors] = useState<CheckoutFieldErrors>({});
   const [submitError, setSubmitError] = useState('');
   const [placed, setPlaced] = useState<PlacedSummary | null>(null);
+  const [paymentOrderId, setPaymentOrderId] = useState('');
+  const [paymentId, setPaymentId] = useState('');
+  const [paymentCartCleared, setPaymentCartCleared] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
 
   const address = addressInput ?? profile?.address ?? '';
   const phone = phoneInput ?? profile?.phone ?? '';
@@ -127,7 +142,7 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
   }, []);
 
   function close() {
-    if (phase !== 'submitting') onClose();
+    if (phase !== 'submitting' && phase !== 'payment-opening') onClose();
   }
 
   function showOrders() {
@@ -144,6 +159,54 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
   function failBeforePlacing(message: string) {
     setSubmitError(message);
     setPhase('editing');
+  }
+
+  async function beginOnlinePayment(orderId: string, customer: CustomerProfile | null) {
+    paymentOutcomeHandledRef.current = false;
+    setPaymentOrderId(orderId);
+    setPaymentId('');
+    setSubmitError('');
+    setPhase('payment-opening');
+
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!sessionData.session) throw new Error('Sign in again before paying online.');
+
+      await openRazorpayCheckout({
+        orderId,
+        name: customer?.fullName ?? '',
+        email: sessionData.session.user.email ?? '',
+        contact: customer?.phone ?? '',
+        onSuccess: (verifiedPaymentId) => {
+          if (paymentOutcomeHandledRef.current) return;
+          paymentOutcomeHandledRef.current = true;
+          setPaymentId(verifiedPaymentId);
+          setPhase('payment-confirmed');
+          setTimeout(() => {
+            onClose();
+            router.replace('/orders');
+          }, 1600);
+        },
+        onFailure: (message) => {
+          if (paymentOutcomeHandledRef.current) return;
+          paymentOutcomeHandledRef.current = true;
+          setSubmitError(message);
+          setPhase('payment-pending');
+        },
+        onDismiss: () => {
+          if (paymentOutcomeHandledRef.current) return;
+          paymentOutcomeHandledRef.current = true;
+          setSubmitError('Payment was cancelled. Your order is saved as unpaid and can be paid from My orders.');
+          setPhase('payment-pending');
+        },
+      });
+    } catch (paymentError) {
+      if (paymentOutcomeHandledRef.current) return;
+      paymentOutcomeHandledRef.current = true;
+      setSubmitError(getErrorMessage(paymentError, 'Unable to start online payment.'));
+      setPhase('payment-pending');
+    }
   }
 
   async function submit() {
@@ -191,6 +254,7 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
         );
         attempt = {
           shopName: prepared.shopName,
+          customer,
           draft: {
             idempotencyKey: keyRef.current,
             customerId: customer.id,
@@ -209,6 +273,12 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
       const result = await placeOrder(attempt.draft);
       if (result.ok) {
         attemptRef.current = null;
+        if (paymentMethod === 'online') {
+          setPaymentCartCleared(result.cartCleared);
+          void refresh();
+          await beginOnlinePayment(result.order.id, attempt.customer);
+          return;
+        }
         setPlaced({
           orderNumber: result.order.orderNumber,
           shopName: attempt.shopName,
@@ -267,6 +337,18 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
               }}
               onViewOrders={showOrders}
               placed={placed}
+            />
+          ) : phase === 'payment-opening' ||
+            phase === 'payment-pending' ||
+            phase === 'payment-confirmed' ? (
+            <PaymentStatusView
+              error={phase === 'payment-pending' ? submitError : ''}
+              loading={phase === 'payment-opening'}
+              onRetry={() => void beginOnlinePayment(paymentOrderId, profile)}
+              onViewOrders={showOrders}
+              cartCleared={paymentCartCleared}
+              paymentId={paymentId}
+              phase={phase}
             />
           ) : (
             <>
@@ -361,17 +443,27 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
                 />
 
                 <Text style={styles.sectionTitle}>Payment method</Text>
-                <View style={styles.paymentCard}>
-                  <View style={styles.paymentIcon}><Text style={styles.paymentIconText}>💵</Text></View>
-                  <View style={styles.paymentCopy}>
-                    <Text style={styles.paymentTitle}>Cash on Delivery / Pay at Shop</Text>
-                    <Text style={styles.paymentNote}>
-                      {isDelivery
-                        ? 'Pay in cash when your order arrives. No online payment needed.'
-                        : 'Pay at the shop when you collect your order. No online payment needed.'}
-                    </Text>
-                  </View>
-                  <View style={styles.codTag}><Text style={styles.codTagText}>COD</Text></View>
+                <View style={styles.paymentOptions}>
+                  <OptionCard
+                    description={isDelivery ? 'Pay in cash when your order arrives.' : 'Pay at the shop when you collect it.'}
+                    disabled={locked}
+                    icon="💵"
+                    onPress={() => setPaymentMethod('cod')}
+                    selected={paymentMethod === 'cod'}
+                    tag="COD"
+                    title="Cash on Delivery / Pay at Shop"
+                  />
+                  {Platform.OS === 'web' ? (
+                    <OptionCard
+                      description="UPI, cards, and net banking via Razorpay."
+                      disabled={locked}
+                      icon="💳"
+                      onPress={() => setPaymentMethod('online')}
+                      selected={paymentMethod === 'online'}
+                      tag="Online"
+                      title="Pay Online"
+                    />
+                  ) : null}
                 </View>
 
                 <Text style={styles.sectionTitle}>Order summary</Text>
@@ -436,7 +528,9 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
                   )}
                 </Pressable>
                 <Text style={styles.footerNote}>
-                  The shop reviews every order request. You pay only when you receive your order.
+                  {paymentMethod === 'online'
+                    ? 'Your order will be saved even if you leave payment incomplete. The shop reviews every order request.'
+                    : 'The shop reviews every order request. You pay only when you receive your order.'}
                 </Text>
               </View>
             </>
@@ -444,6 +538,66 @@ function CheckoutSheet({ onClose }: { onClose: () => void }) {
         </View>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function PaymentStatusView({
+  cartCleared,
+  error,
+  loading,
+  onRetry,
+  onViewOrders,
+  paymentId,
+  phase,
+}: {
+  cartCleared: boolean;
+  error: string;
+  loading: boolean;
+  onRetry: () => void;
+  onViewOrders: () => void;
+  paymentId: string;
+  phase: 'payment-opening' | 'payment-pending' | 'payment-confirmed';
+}) {
+  const confirmed = phase === 'payment-confirmed';
+  return (
+    <View style={styles.paymentStatus}>
+      <View style={[styles.placedIcon, confirmed ? null : styles.paymentPendingIcon]}>
+        <Text style={styles.placedIconText}>{confirmed ? '✓' : '₹'}</Text>
+      </View>
+      <Text accessibilityLiveRegion="polite" style={styles.placedTitle}>
+        {confirmed ? 'Payment confirmed' : loading ? 'Opening Razorpay…' : 'Order saved'}
+      </Text>
+      {loading ? (
+        <ActivityIndicator color={Palette.green} />
+      ) : confirmed ? (
+        <Text selectable style={styles.paymentId}>Payment ID: {paymentId}</Text>
+      ) : (
+        <Text accessibilityRole="alert" style={styles.paymentError}>
+          {error || 'Your order is unpaid. You can try again from My orders.'}
+        </Text>
+      )}
+      {!cartCleared ? (
+        <Text style={styles.paymentCartWarning}>
+          Your order is saved, but we couldn’t clear the cart. Remove the ordered items before placing another order.
+        </Text>
+      ) : null}
+      {!confirmed && !loading ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onRetry}
+          style={({ pressed }) => [styles.placeButton, pressed && styles.dimmed]}>
+          <Text style={styles.placeButtonText}>Try payment again</Text>
+        </Pressable>
+      ) : null}
+      {!loading ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onViewOrders}
+          style={({ pressed }) => [styles.secondaryButton, styles.placedButton, pressed && styles.dimmed]}>
+          <Text style={styles.secondaryButtonText}>View my orders</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -758,53 +912,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
   },
-  paymentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderWidth: 1.5,
-    borderColor: Palette.green,
-    borderRadius: 14,
-    backgroundColor: '#eef8ec',
-  },
-  paymentIcon: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: '#d6efd9',
-  },
-  paymentIconText: {
-    fontSize: 20,
-  },
-  paymentCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  paymentTitle: {
-    color: Palette.darkGreen,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  paymentNote: {
-    color: '#4f6354',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  codTag: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 9,
-    backgroundColor: Palette.green,
-  },
-  codTagText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.6,
+  paymentOptions: {
+    gap: 10,
   },
   summaryCard: {
     gap: 8,
@@ -937,6 +1046,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 26,
+  },
+  paymentStatus: {
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 24,
+    paddingVertical: 36,
+  },
+  paymentPendingIcon: {
+    backgroundColor: '#fff4df',
+  },
+  paymentId: {
+    color: Palette.darkGreen,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  paymentError: {
+    color: Palette.danger,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  paymentCartWarning: {
+    color: Palette.danger,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   placedIcon: {
     width: 72,

@@ -165,6 +165,7 @@ export default function IncomingOrdersScreen() {
                 </View>
               </View>
               <View style={styles.sidebarMenu}>
+                <SidebarItem icon="✦" label="Today's Update" onPress={() => router.replace('/shop-updates')} />
                 <SidebarItem icon="▣" label="Products" onPress={() => router.replace('/products')} />
                 <SidebarItem active icon="🧾" label="Incoming orders" onPress={() => undefined} />
               </View>
